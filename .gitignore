@@ -1,1 +1,2 @@
-hw1/output/*
+hw1/output
+!hw1/output/.gitkeep
