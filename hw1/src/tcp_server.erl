@@ -1,42 +1,57 @@
 -module(tcp_server).
 -compile([export_all]).
 
-init(Port) ->
-	Opt = [list, {active, false}, {reuseaddr, true}],
+% -spec format_ip(tuple()) -> string(). % for documentation only
+
+create_tcp_server(Port, HandlerFunc) ->
+	Opt = [list, {active, false}, {reuseaddr, true}], % may recv msg from last connection, ignore this
 	case gen_tcp:listen(Port, Opt) of
-		{ok, Listen} ->
+		{ok, ListenSocket} ->
 			% gen_tcp:close(Listen),
-			io:format("listening...~n"),
-			handler(Listen);
+			io:format("server listening...~n"),
+			listen(ListenSocket, HandlerFunc);
 		{error, _Error} ->
 			io:format("error: ~p~n", [_Error])
 	end.
 
-handler(Listen) ->
-	% TODO spawn
-	case gen_tcp:accept(Listen) of
-		{ok, Client} ->
-			{ok, {Addr, Port}} = inet:peername(Client),
+% listen and spawn for every new connection
+% 一个是process的复用，一个是socket连接的复用
+listen(ListenSocket, HandlerFunc) ->
+	case gen_tcp:accept(ListenSocket) of
+		{ok, Socket} ->
+			{ok, {Addr, Port}} = inet:peername(Socket),
 			io:format("new connection from ~s:~B~n", [format_ip(Addr), Port]),
-			request(Client);
+			% get from process pool
+			% _ = spawn(?MODULE, handler, [Socket, HandlerFunc]), % fun tcp_justPrint/1
+			handler(Socket, HandlerFunc),
+			% handler(Socket, fun tcp_justPrint/1),
+			listen(ListenSocket, HandlerFunc);
 		{error, _Error} ->
 			error
 	end.
 
-% send not block, recv block
-request(Client) ->
-	io:format("waiting for recv...~n"),
-	Recv = gen_tcp:recv(Client, 0), % do not handle error now
-	case Recv of
-		{ok, Str} ->
-			io:format("From client: ~s~n", [Str]),
-			gen_tcp:send(Client, "Server received: " ++ Str);
-		{error, Error} ->
-			io:format("rudy: error: ~s~n", [Error])
-	end,
-	gen_tcp:close(Client).
+% for test only
+tcp_justPrint(Req) ->
+	io:format("From client: ~s~n", [Req]),
+	{ok, "Server received: " ++ Req}.
 
-% only IPV4
+handler(Socket, HandleFunc) ->
+	case gen_tcp:recv(Socket, 0) of
+		{ok, Str} ->
+			% io:format("here ~s~n", [Str]),
+			case HandleFunc(Str) of
+				{ok, Resp} ->
+					io:format("[TCP] Sending back: ~s~n", [Resp]),
+					gen_tcp:send(Socket, Resp);
+				{error, _Error} ->
+					error
+			end;
+		{error, Error} ->
+			io:format("rudy: error: ~s~n", [Error])		
+	end,
+	gen_tcp:close(Socket). % return to pool
+
+% only IPV4, e.g. {10, 233, 0, 1}
 format_ip(Ip) ->
 	format_ip("", tuple_to_list(Ip)).
 

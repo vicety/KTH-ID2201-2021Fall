@@ -1,0 +1,5 @@
+-record(request_meta, {method, uri, http_version}).
+-record(http_request, {meta = #request_meta{}, header = #{}, body = ""}).
+-record(http_server, {router = #{}, port}).
+-record(http_endpoint, {method, uri}).
+-record(handler, {method, uri, handler_func}).
