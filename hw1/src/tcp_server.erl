@@ -19,11 +19,11 @@ create_tcp_server(Port, HandlerFunc) ->
 listen(ListenSocket, HandlerFunc) ->
 	case gen_tcp:accept(ListenSocket) of
 		{ok, Socket} ->
-			{ok, {Addr, Port}} = inet:peername(Socket),
-			io:format("new connection from ~s:~B~n", [format_ip(Addr), Port]),
+			% {ok, {Addr, Port}} = inet:peername(Socket),
+			% io:format("new connection from ~s:~B~n", [format_ip(Addr), Port]),
 			% get from process pool
-			% _ = spawn(?MODULE, handler, [Socket, HandlerFunc]), % fun tcp_justPrint/1
-			handler(Socket, HandlerFunc),
+			_ = spawn(?MODULE, handler, [Socket, HandlerFunc]), % fun tcp_justPrint/1
+			% handler(Socket, HandlerFunc),
 			% handler(Socket, fun tcp_justPrint/1),
 			listen(ListenSocket, HandlerFunc);
 		{error, _Error} ->
@@ -38,10 +38,9 @@ tcp_justPrint(Req) ->
 handler(Socket, HandleFunc) ->
 	case gen_tcp:recv(Socket, 0) of
 		{ok, Str} ->
-			% io:format("here ~s~n", [Str]),
 			case HandleFunc(Str) of
 				{ok, Resp} ->
-					io:format("[TCP] Sending back: ~s~n", [Resp]),
+					% io:format("[TCP] Sending back: ~s~n", [Resp]),
 					gen_tcp:send(Socket, Resp);
 				{error, _Error} ->
 					error
@@ -55,9 +54,9 @@ handler(Socket, HandleFunc) ->
 format_ip(Ip) ->
 	format_ip("", tuple_to_list(Ip)).
 
-format_ip(Now, Ip) when Ip == [] ->
+format_ip(Now, []) ->
 	Now;
-format_ip(Now, Ip) when Now == "" ->
+format_ip("", Ip) ->
 	[First|Rest] = Ip,
 	format_ip(integer_to_list(First), Rest);
 format_ip(Now, Ip) ->

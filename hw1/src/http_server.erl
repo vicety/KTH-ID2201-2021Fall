@@ -45,10 +45,10 @@ parse_http_request(RequestStr) ->
     % trim first empty lines rfc2616 4.1
 
     [RequestLine|Rest] = string:split(RequestStr, "\r\n"),
-    io:format("RequestLine: [~s]~n", [RequestLine]),
+    % io:format("RequestLine: [~s]~n", [RequestLine]),
     [Headers|Body] = string:split(Rest, "\r\n\r\n"), % client must at least include a host header, c.f. rfc2616 14.23
-    io:format("Headers: [~s]~n", [Headers]),
-    io:format("Body: [~s]~n", [Body]),
+    % io:format("Headers: [~s]~n", [Headers]),
+    % io:format("Body: [~s]~n", [Body]),
 
     RequestMeta = parse_request_line(RequestLine),
     RequestHeaderMap = parse_request_headers(Headers),
