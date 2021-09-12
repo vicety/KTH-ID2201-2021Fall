@@ -1,5 +1,6 @@
 -module(tcp_server).
 -compile([export_all]).
+-include("http.hrl").
 
 % -spec format_ip(tuple()) -> string(). % for documentation only
 
@@ -22,7 +23,7 @@ listen(ListenSocket, HandlerFunc) ->
 			% io:format("new connection from ~s:~B~n", [format_ip(Addr), Port]),
 
 			% get from process pool
-			_ = spawn(?MODULE, handler, [Socket, HandlerFunc]), % fun tcp_justPrint/1
+			_ = spawn(?MODULE, handler, [Socket, HandlerFunc]), % fun tcp_justPrint/1 操作系统线程是有限的
 			% handler(Socket, HandlerFunc),
 			% handler(Socket, fun tcp_justPrint/1),
 			listen(ListenSocket, HandlerFunc);
@@ -41,6 +42,7 @@ handler(Socket, HandleFunc) ->
 		{ok, Str} ->
 			case HandleFunc(Str) of
 				{ok, Resp} ->
+					?LOG("Resp: " ++ Resp),
 					% io:format("[TCP] Sending back: ~s~n", [Resp]),
 					gen_tcp:send(Socket, Resp);
 				{error, _Error} ->

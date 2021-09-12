@@ -9,6 +9,8 @@ build_router(Handlers) ->
     build_router(#{}, Handlers).
 
 build_router(Router, []) ->
+    Router,
+    ?LOG(Router),
     Router;
 build_router(Router, Handlers) ->
     [Handler|Rest] = Handlers,
@@ -25,8 +27,17 @@ start_server(HTTPServer) ->
 
 http_pipeline(Server, RequestStr) ->
     HTTPRequest = parse_http_request(RequestStr),
-    RawResponse = dispatcher(Server, HTTPRequest),
-    make_http_response(RawResponse).
+    dispatcher(Server, HTTPRequest).
+    
+error_recovery(HandlerFunc) ->
+    fun(HTTPRequest) ->
+        try HandlerFunc(HTTPRequest) of
+            RawResponse ->
+                make_http_response(RawResponse)
+        catch
+            _:_ -> make_internal_error_response()
+        end
+    end.
 
 dispatcher(Server, HTTPRequest) ->
     URI = HTTPRequest#http_request.meta#request_meta.uri,
@@ -36,13 +47,20 @@ dispatcher(Server, HTTPRequest) ->
     case maps:is_key(K, RouterMap) of
         true ->
             #{K := Handler} = RouterMap,
-            Handler(HTTPRequest);
+            WrappedHandler = error_recovery(Handler),
+            WrappedHandler(HTTPRequest);
         false ->
-            error
+            make_not_found_error_response()
     end.
 
 make_http_response(RespStr) -> 
     {ok, "HTTP/1.1 200 OK\r\n\r\n" ++ RespStr}. % TODO: handle error
+
+make_internal_error_response() ->
+    {ok, "HTTP/1.1 500 Internal Server Error\r\n"}.
+
+make_not_found_error_response() ->
+    {ok, "HTTP/1.1 404 Not Found\r\n"}.
 
 % TODO: ensure I parse it right
 parse_http_request(RequestStr) ->
