@@ -4,10 +4,9 @@
 % -spec format_ip(tuple()) -> string(). % for documentation only
 
 create_tcp_server(Port, HandlerFunc) ->
-	Opt = [list, {active, false}, {reuseaddr, true}], % may recv msg from last connection, ignore this
+	Opt = [list, {active, false}, {reuseaddr, true}, {backlog, 5}], % may recv msg from last connection, ignore this
 	case gen_tcp:listen(Port, Opt) of
 		{ok, ListenSocket} ->
-			% gen_tcp:close(Listen),
 			io:format("server listening...~n"),
 			listen(ListenSocket, HandlerFunc);
 		{error, _Error} ->
@@ -21,6 +20,7 @@ listen(ListenSocket, HandlerFunc) ->
 		{ok, Socket} ->
 			% {ok, {Addr, Port}} = inet:peername(Socket),
 			% io:format("new connection from ~s:~B~n", [format_ip(Addr), Port]),
+
 			% get from process pool
 			_ = spawn(?MODULE, handler, [Socket, HandlerFunc]), % fun tcp_justPrint/1
 			% handler(Socket, HandlerFunc),
@@ -36,7 +36,8 @@ tcp_justPrint(Req) ->
 	{ok, "Server received: " ++ Req}.
 
 handler(Socket, HandleFunc) ->
-	case gen_tcp:recv(Socket, 0) of
+	% timeout close connection, rather than recv only once, since the msg may not be finished yet
+	case gen_tcp:recv(Socket, 0) of 
 		{ok, Str} ->
 			case HandleFunc(Str) of
 				{ok, Resp} ->

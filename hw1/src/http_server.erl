@@ -18,13 +18,13 @@ build_router(Router, Handlers) ->
 
 start_server(HTTPServer) ->
     TcpHandler = fun(RequestStr) ->
+        % TODO Request may not complete, need a buffer to store that
         http_pipeline(HTTPServer, RequestStr)
     end,
     tcp_server:create_tcp_server(HTTPServer#http_server.port, TcpHandler).
 
 http_pipeline(Server, RequestStr) ->
     HTTPRequest = parse_http_request(RequestStr),
-    % io:format("here ~s~n", [HTTPRequest#http_request.meta#request_meta.method]),
     RawResponse = dispatcher(Server, HTTPRequest),
     make_http_response(RawResponse).
 
@@ -41,22 +41,22 @@ dispatcher(Server, HTTPRequest) ->
             error
     end.
 
-parse_http_request(RequestStr) ->
-    % trim first empty lines rfc2616 4.1
+make_http_response(RespStr) -> 
+    {ok, "HTTP/1.1 200 OK\r\n\r\n" ++ RespStr}. % TODO: handle error
 
+% TODO: ensure I parse it right
+parse_http_request(RequestStr) ->
     [RequestLine|Rest] = string:split(RequestStr, "\r\n"),
-    % io:format("RequestLine: [~s]~n", [RequestLine]),
     [Headers|Body] = string:split(Rest, "\r\n\r\n"), % client must at least include a host header, c.f. rfc2616 14.23
-    % io:format("Headers: [~s]~n", [Headers]),
-    % io:format("Body: [~s]~n", [Body]),
+    
+    ?LOG("RequestLine: " ++ RequestLine),    
+    ?LOG("Headers: " ++ Headers),
+    ?LOG("Body: " ++ Body),
 
     RequestMeta = parse_request_line(RequestLine),
     RequestHeaderMap = parse_request_headers(Headers),
 
     #http_request{meta=RequestMeta, header=RequestHeaderMap, body=Body}.
-
-make_http_response(RespStr) -> 
-    {ok, "HTTP/1.1 200 OK\r\n\r\n" ++ RespStr}. % TODO: handle error
 
 parse_request_line(RequestLine) ->
     [Method|Rest] = string:split(RequestLine, " "),

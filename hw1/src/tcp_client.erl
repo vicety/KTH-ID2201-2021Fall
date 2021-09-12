@@ -11,8 +11,8 @@ start() ->
 				{error, _Reason} ->
 					error
 			end;
-		{error, _Reason} ->
-			error
+		{error, Reason} ->
+			io:format("error: ~p~n", [Reason])
 	end.
 
 

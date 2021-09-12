@@ -46,14 +46,18 @@ dummy(_, _) ->
      ok.
 
 request(Host, Port) ->
-    {ok, Server} = gen_tcp:connect(Host, Port, [list, {active, false}, {reuseaddr, true}]),
-    gen_tcp:send(Server, "GET / HTTP/1.1"),
-    Recv = gen_tcp:recv(Server, 0),
-    case Recv of
-     	{ok, _} ->
-     	    ok;
-     	{error, Error} ->
-     	    io:format("test: error: ~w~n", [Error])
-    end,
-    gen_tcp:close(Server).
+    case gen_tcp:connect(Host, Port, [list, {active, false}, {reuseaddr, true}]) of
+        {ok, Server} ->        
+            gen_tcp:send(Server, "GET / HTTP/1.1"),
+            Recv = gen_tcp:recv(Server, 0),
+            case Recv of
+                {ok, _} ->
+                    ok;
+                {error, Error} ->
+                    io:format("test: error: ~w~n", [Error])
+            end,
+            gen_tcp:close(Server);
+        {error, Error} ->
+            io:format("error: ~p~n", [Error])
+    end.
     
