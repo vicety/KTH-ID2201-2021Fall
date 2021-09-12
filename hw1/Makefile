@@ -31,4 +31,4 @@ debug:
 	@erl -noshell -pa $(targetDir) -eval 'io:format("~p~n", [$(CMD)]), init:stop()'
 
 bench:
-	@erl -noshell -pa $(targetDir) -eval 'bench:bench("localhost", 80, $(THREAD), $(REPEAT)), init:stop()'
+	@erl -noshell -pa $(targetDir) -eval 'bench:bench("localhost", 50001, $(THREAD), $(REPEAT)), init:stop()'
