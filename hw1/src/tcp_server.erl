@@ -5,7 +5,7 @@
 % -spec format_ip(tuple()) -> string(). % for documentation only
 
 create_tcp_server(Port, HandlerFunc) ->
-	Opt = [list, {active, false}, {reuseaddr, true}, {backlog, 256}], % may recv msg from last connection, ignore this
+	Opt = [list, {active, false}, {reuseaddr, true}, {backlog, 4096}], % may recv msg from last connection, ignore this
 	case gen_tcp:listen(Port, Opt) of
 		{ok, ListenSocket} ->
 			io:format("server listening...~n"),
