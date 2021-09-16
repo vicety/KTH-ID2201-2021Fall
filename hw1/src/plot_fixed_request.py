@@ -28,6 +28,7 @@ ax.set_xscale('function', functions=(forwardX, backwardX))
 ax.set_yscale('function', functions=(forwardY, backwardY))
 ax.grid(True)
 
+# send 160 request in total, compare queusize, single/multi thread
 x = [1, 2, 4, 8, 16, 32, 80, 160]
 y_single_thread_5_queue_size = [6562, 6563,
                                 6563, 7907, 7248, 10299, 113951, 107960]
@@ -43,7 +44,7 @@ ax.yaxis.set_major_locator(LogLocator(2))
 ax.xaxis.set_major_locator(LogLocator(2))
 
 
-ax.plot(x[:7], y_single_thread_512_queue_size[:7], label="single thread", marker="o")
+ax.plot(x, y_single_thread_512_queue_size, label="single thread", marker="o")
 for a, b in zip(x[:7], y_single_thread_512_queue_size[:7]):
     # text: https://matplotlib.org/stable/api/_as_gen/matplotlib.pyplot.text.html
     ax.text(a, 1.06 * b, "{}".format(b), ha="center", va="bottom", fontsize=POINT_FONT_SIZE)

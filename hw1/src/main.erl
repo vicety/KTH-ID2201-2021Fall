@@ -11,3 +11,6 @@ main(Port) ->
     ]),
     HTTPServer = http_server:create_http_server(Port, Router),
     http_server:start_server(HTTPServer).
+
+main() ->
+    spawn(?MODULE, main, [50001]).

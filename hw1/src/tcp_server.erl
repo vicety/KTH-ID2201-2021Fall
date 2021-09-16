@@ -5,11 +5,16 @@
 % -spec format_ip(tuple()) -> string(). % for documentation only
 
 create_tcp_server(Port, HandlerFunc) ->
-	Opt = [list, {active, false}, {reuseaddr, true}, {backlog, 4096}], % may recv msg from last connection, ignore this
+	Opt = [list, {active, false}, {reuseaddr, true}, {backlog, 1024}], % may recv msg from last connection, ignore this
+	% Opt = [list, {active, false}, {reuseaddr, true}],
+
 	case gen_tcp:listen(Port, Opt) of
 		{ok, ListenSocket} ->
 			io:format("server listening...~n"),
-			listen(ListenSocket, HandlerFunc);
+			listen(ListenSocket, HandlerFunc); % if disable thread pool
+
+			% Pool = tpe:createThreadPoolExecutor(420), % if need thread pool
+			% listenPool(ListenSocket, HandlerFunc, Pool);
 		{error, _Error} ->
 			io:format("error: ~p~n", [_Error])
 	end.
@@ -22,11 +27,24 @@ listen(ListenSocket, HandlerFunc) ->
 			% {ok, {Addr, Port}} = inet:peername(Socket),
 			% io:format("new connection from ~s:~B~n", [format_ip(Addr), Port]),
 
-			% get from process pool
 			_ = spawn(?MODULE, handler, [Socket, HandlerFunc]), % fun tcp_justPrint/1 操作系统线程是有限的
 			% handler(Socket, HandlerFunc),
 			% handler(Socket, fun tcp_justPrint/1),
 			listen(ListenSocket, HandlerFunc);
+		{error, _Error} ->
+			error
+	end.
+
+listenPool(ListenSocket, HandlerFunc, Pool) ->
+	case gen_tcp:accept(ListenSocket) of
+		{ok, Socket} ->
+			% {ok, {Addr, Port}} = inet:peername(Socket),
+			% io:format("new connection from ~s:~B~n", [format_ip(Addr), Port]),
+
+			% get from process pool
+			tpe:submitTask(Pool, Socket, HandlerFunc),
+
+			listenPool(ListenSocket, HandlerFunc, Pool);
 		{error, _Error} ->
 			error
 	end.

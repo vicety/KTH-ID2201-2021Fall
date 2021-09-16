@@ -25,7 +25,6 @@ report(N, Host, Port, Ctrl) ->
     run(N, Host, Port),
     Ctrl ! ok.
 
-
 collect(0) ->
     ok;
 collect(N) ->    
@@ -60,4 +59,3 @@ request(Host, Port) ->
         {error, Error} ->
             io:format("error: ~p~n", [Error])
     end.
-    
