@@ -1,0 +1,3 @@
+{europe, [
+    {london, [paris, newYork]}
+]}.
