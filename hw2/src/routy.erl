@@ -105,12 +105,11 @@ router(Name, N, Hist, Intf, Table, Map, Neighbours, Init, RandomNum) ->
         {'DOWN', Ref, process, _, Reason} ->
             {ok, DownNode} = intf:name(Ref, Intf),
             io:format("~w: exit recived from ~w, Reason: ~p~n", [Name, DownNode, Reason]),
-            % TODO: neighbours stored in intf(maybe also map), maybe broadcast now
+            % TODO: maybe broadcast now
             Intf1 = intf:remove(DownNode, Intf),
             Hist1 = hist:reset(DownNode, Hist),
             Map1 = map:removeNeighbour(Map, Name, DownNode),
             Table1 = dij:table(Name, Map1),
-            % TODO: demonitor maybe
             router(Name, N, Hist1, Intf1, Table1, Map1, Neighbours, Init, RandomNum);
         broadcast ->
             % only broadcast when connected done, i.e. Init == false
@@ -126,6 +125,3 @@ router(Name, N, Hist, Intf, Table, Map, Neighbours, Init, RandomNum) ->
                     router(Name, N+1, Hist, Intf, Table, Map, Neighbours, Init, RandomNum)                
             end
     end.
-
-
-% 单机代表一个洲，所以三台机器，其实三个进程也行
