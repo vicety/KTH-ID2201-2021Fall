@@ -54,7 +54,7 @@ send(NextHop, To, Message, Intf) ->
     {NameToPid, _, _} = Intf,
     case maps:find(NextHop, NameToPid) of
         {ok, Pid} ->
-            io:format("send NextHop ~p Pid ~p To ~p, ~p~n", [NextHop, Pid, To, Message]),
+            io:format("forwad message [~p] with destination ~p To next hop ~p~n", [Message, To, NextHop]),
             Pid ! {send, Message, To};
         error ->
             notfound

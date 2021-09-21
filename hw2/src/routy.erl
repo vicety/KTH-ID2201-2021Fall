@@ -58,10 +58,9 @@ router(Name, N, Hist, Intf, Table, Map, Neighbours, Init, RandomNum) ->
         {send, Msg, DstName} -> 
             case DstName of
                 Name ->
-                    io:format("recv: ~p~n", [Msg]);
+                    io:format("recv message: ~p~n", [Msg]);
                 _ ->
                     NextHop = dij:route(DstName, Table),
-                    io:format("nexthop:~p~n", [NextHop]),
                     intf:send(NextHop, DstName, Msg, Intf)
             end,
             router(Name, N, Hist, Intf, Table, Map, Neighbours, Init, RandomNum);
