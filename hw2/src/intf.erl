@@ -50,11 +50,12 @@ broadcast(Message, Intf) ->
     {NameToPid, _, _} = Intf,
     lists:map(fun(Pid) -> Pid ! Message end, maps:values(NameToPid)).
 
-send(Name, Message, Intf) ->
+send(NextHop, To, Message, Intf) ->
     {NameToPid, _, _} = Intf,
-    case maps:find(Name, NameToPid) of
+    case maps:find(NextHop, NameToPid) of
         {ok, Pid} ->
-            Pid ! Message;
+            io:format("send NextHop ~p Pid ~p To ~p, ~p~n", [NextHop, Pid, To, Message]),
+            Pid ! {send, Message, To};
         error ->
             notfound
     end.

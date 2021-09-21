@@ -26,3 +26,11 @@ all_nodes(Set, Lists) ->
     [Li|Rest] = Lists,
     UpdatedSet = lists:foldl(fun(Ele, St) -> sets:add_element(Ele, St) end, Set, Li),
     all_nodes(UpdatedSet, Rest).
+
+removeNeighbour(Map, Current, Neighbour) ->
+    #{Current := Links} = Map,
+    Map#{Current => lists:delete(Neighbour, Links)}.
+
+addNeighbour(Map, Current, Neighbour) ->
+    #{Current := Links} = Map,
+    Map#{Current => [Neighbour|Links]}.

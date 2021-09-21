@@ -9,10 +9,15 @@
 
 % return: routing table
 dij(Map, Current) ->
-    dij(Current, Map, #{Current => {0, Current}}, sets:new(), sets:new(), Current).
+    % io:format("Dij with current ~p Map ~p~n", [Current, Map]),
+    Sorted = dij(Current, Map, #{Current => {0, Current}}, sets:new(), sets:new(), Current),
+    % io:format("Getting Sorted: ~p~n", [Sorted]),
+    Sorted.
 
 % Map, Map, Set, Set, atom
-dij(_, #{}, _, _, _, _) ->
+% empty map actually matches everything...
+% https://stackoverflow.com/questions/27829730/empty-map-pattern-matches-even-for-non-empty-map/27830886
+dij(_, Map, _, _, _, _) when map_size(Map) == 0 ->
     #{};
 dij(_, _, Sorted, _, _, "") ->
     Sorted;
@@ -22,7 +27,7 @@ dij(From, Map, Sorted, VisitedBefore, ToVisitBefore, Base) ->
     ToVisit = sets:del_element(Base, ToVisitBefore),
 
     Neighbours = map:neighbours(Base, Map),
-    io:format("Now at: [~s], Neighbours: [~p]~n", [Base, Neighbours]),
+    % io:format("Now at: [~s], Neighbours: [~p]~n", [Base, Neighbours]),
 
     #{Base := {BaseDistance, BaseNextHop}} = Sorted,
     {UpdatedSorted, UpdatedToVisit} = lists:foldl(fun(Neighbour, Ctx) ->
@@ -30,7 +35,7 @@ dij(From, Map, Sorted, VisitedBefore, ToVisitBefore, Base) ->
         Seen = sets:is_element(Neighbour, Visited),
         if
             Seen ->
-                ok;
+                {Srted, ToVis};
             true ->
                 UpdatedToVisit = sets:add_element(Neighbour, ToVis),
                 if
@@ -41,14 +46,14 @@ dij(From, Map, Sorted, VisitedBefore, ToVisitBefore, Base) ->
                 end
         end
     end, {Sorted, ToVisit}, Neighbours),
-    io:format("Tovisit: [~p]~n", [sets:to_list(UpdatedToVisit)]),
+    % io:format("Tovisit: [~p]~n", [sets:to_list(UpdatedToVisit)]),
     Next = next(sets:to_list(UpdatedToVisit), UpdatedSorted, 2147483647, ""), % "" if no more place to visit
     dij(From, Map, UpdatedSorted, Visited, UpdatedToVisit, Next).
 
 table(Current, Map) ->
     Sorted = dij(Map, Current),
     Keys = maps:keys(Sorted),
-    table(Sorted, Keys, []).
+    table(Sorted, Keys, #{}).
 
 table(_Sorted, [], Collect) ->
     Collect;
@@ -62,6 +67,7 @@ route(Node, Table) ->
         {ok, NextHop} ->
             NextHop;
         error ->
+            io:format("error: dij route to ~p not found~n", [Node]),
             notfound
     end.
 
@@ -116,3 +122,7 @@ print_sorted(Sorted, Keys) ->
 test() ->
     Map = #{a => [b, c], b => [c, d], c => [e], d => [e], f => [d]},
     dij(Map, a).
+
+test2() ->
+    Map = #{a => [b], b => [c], c => [a]},
+    dij(Map, c).
