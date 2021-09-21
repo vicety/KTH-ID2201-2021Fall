@@ -61,7 +61,12 @@ router(Name, N, Hist, Intf, Table, Map, Neighbours, Init, RandomNum) ->
                     io:format("recv message: ~p~n", [Msg]);
                 _ ->
                     NextHop = dij:route(DstName, Table),
-                    intf:send(NextHop, DstName, Msg, Intf)
+                    case NextHop of
+                        notfound ->
+                            io:format("unreachable node ~p~n", [DstName]);
+                        _ ->
+                            intf:send(NextHop, DstName, Msg, Intf)
+                    end
             end,
             router(Name, N, Hist, Intf, Table, Map, Neighbours, Init, RandomNum);
         {links, {RemoteName, RemoteN, RemoteNeighbourNames, RemoteRandomNum}, MsgFrom} ->
@@ -118,10 +123,11 @@ router(Name, N, Hist, Intf, Table, Map, Neighbours, Init, RandomNum) ->
                     io:format("ignore timeout before manual connect...~n"),
                     router(Name, N, Hist, Intf, Table, Map, Neighbours, Init, RandomNum);
                 false ->
-                    NeighbourNames = lists:map(fun(Neighbour) -> element(1, Neighbour) end, Neighbours),
-                    io:format("broadcasting local([~p]) neighbour info ~p...~n", [Name, NeighbourNames]),
+                    LocalNeighbours = map:neighbours(Name, Map),
+                    % NeighbourNames = lists:map(fun(Neighbour) -> element(1, Neighbour) end, Neighbours),
+                    io:format("broadcasting local([~p]) neighbour info ~p...~n", [Name, LocalNeighbours]),
                     % it's better to use a random number to indicate this router re-runs, in case the init transmission may be lost
-                    intf:broadcast({links, {Name, N, NeighbourNames, RandomNum}, Name}, Intf),
+                    intf:broadcast({links, {Name, N, LocalNeighbours, RandomNum}, Name}, Intf),
                     router(Name, N+1, Hist, Intf, Table, Map, Neighbours, Init, RandomNum)                
             end
     end.
