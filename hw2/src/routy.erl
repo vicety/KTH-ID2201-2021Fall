@@ -3,7 +3,7 @@
 
 start(Name) ->
     register(Name, spawn(?MODULE, init, [Name])),
-    spawn(?MODULE, broadcastTimeout, [Name]).
+    spawn(?MODULE, broadcastTimeout, [Name]). % maybe use spawn_link here?
     % timer:apply_interval(5000, ?MODULE, broadcastTimeout, [Name]).
     % timer:send_interval(5000, broadcast).
 
