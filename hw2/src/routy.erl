@@ -41,6 +41,7 @@ init(Name) ->
 % Map: A global node connectivity map
 % Neighbours: Nodes that can be reached initially, dont change in this func since we dont consider adding more nodes dynamically.
 % Init: if the router is ready to broadcast/forward msg
+% RandomNum: used to check if it is a new connection, it's reasonable to regard msg from same host with large difference N as a new connection, just like tcp seq. Whatever, we use randomNum here.
 
 % mark-red: 我们不知道上游何时结束，因此
 router(Name, N, Hist, Intf, Table, Map, Neighbours, Init, RandomNum) ->
