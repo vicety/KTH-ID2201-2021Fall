@@ -2,17 +2,17 @@
 -compile(export_all).
 
 run(InitialSeqNum) ->
-    register(tester, spawn_link(fun() -> loop(InitialSeqNum + 1, {#{}, #{}}, 0, 0, 0, [], 0) end)).
+    register(tester, spawn_link(fun() -> loop(InitialSeqNum + 1, {#{}, #{}}, 0, 0, 0, [], 0, 0) end)).
 
 stop() ->
     tester ! stop.
 
 % need to check by msgID(actually traceID) and realTime, so need two maps here
-loop(NextSeqNum, Maps, DisorderCnt, CasualDisorderCnt, Cnt, RealTimes, QueueSize) ->
+loop(NextSeqNum, Maps, DisorderCnt, CasualDisorderCnt, Cnt, RealTimes, QueueSize, QueueSizeAcc) ->
     {HistoryMap, SendRecvMap} = Maps,
     receive
         {queue, QSize} ->
-            loop(NextSeqNum, Maps, DisorderCnt, CasualDisorderCnt, Cnt, RealTimes, max(QSize, QueueSize));
+            loop(NextSeqNum, Maps, DisorderCnt, CasualDisorderCnt, Cnt, RealTimes, max(QSize, QueueSize), QueueSizeAcc + QSize);
         {msg, MsgID, RealTime, SendRecv, MsgFrom, MsgTo} ->
             % put into
             HistoryMap1 = HistoryMap#{RealTime => SendRecv},
@@ -41,13 +41,14 @@ loop(NextSeqNum, Maps, DisorderCnt, CasualDisorderCnt, Cnt, RealTimes, QueueSize
 
             RealTimes1 = lists:append(RealTimes, [RealTime]), 
 
-            loop(NextSeqNum + NextSeqNumDelta, {HistoryMap2, SendRecvMap1}, DisorderCnt + DisorderDelta, CasualDisorderCnt1, Cnt + 1, RealTimes1, QueueSize);
+            loop(NextSeqNum + NextSeqNumDelta, {HistoryMap2, SendRecvMap1}, DisorderCnt + DisorderDelta, CasualDisorderCnt1, Cnt + 1, RealTimes1, QueueSize, QueueSizeAcc);
         stop ->
             ReversePairCnt = count_reverse_pairs(lists:sublist(RealTimes, 100)),
             io:format("reverse pair [~p/4950] =~p~n", [ReversePairCnt, ReversePairCnt/4950]),
             % io:format("Disorder Rate: [~p/~p = ~p] Casual Disorder Rate: [~p/~p] = ~p~n", [DisorderCnt, Cnt, DisorderCnt/Cnt, CasualDisorderCnt, Cnt, CasualDisorderCnt/Cnt])
             io:format("Casual Disorder Rate: [~p/~p] = ~p~n", [CasualDisorderCnt, Cnt, CasualDisorderCnt/Cnt]),
-            io:format("Maximum Queue Size: ~p~n", [QueueSize])
+            io:format("Maximum Queue Size: ~p~n", [QueueSize]),
+            io:format("Acc Queue Size: ~p~n", [QueueSizeAcc/Cnt])
     end.
 
 count_reverse_pairs(Arr) ->

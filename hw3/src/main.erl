@@ -17,19 +17,19 @@ run(Sleep, Jitter, ClockType) ->
     timer:sleep(4000),
 
     % add new worker
-    E = worker:start(ClockType, '5', Log, 42, Sleep, Jitter),
-    worker:peers(E, [{A, '1'}, {B, '2'}, {C, '3'}, {D, '4'}]),
-    worker:new_peer(A, {E, '5'}),
-    worker:new_peer(B, {E, '5'}),
-    worker:new_peer(C, {E, '5'}),
-    worker:new_peer(D, {E, '5'}),
+    % E = worker:start(ClockType, '5', Log, 42, Sleep, Jitter),
+    % worker:peers(E, [{A, '1'}, {B, '2'}, {C, '3'}, {D, '4'}]),
+    % worker:new_peer(A, {E, '5'}),
+    % worker:new_peer(B, {E, '5'}),
+    % worker:new_peer(C, {E, '5'}),
+    % worker:new_peer(D, {E, '5'}),
 
     timer:sleep(1000),
     worker:stop(A),
     worker:stop(B),
     worker:stop(C),
     worker:stop(D),
-    worker:stop(E),
+    % worker:stop(E),
     log:stop(Log),
     timer:sleep(500),
     tester:stop().

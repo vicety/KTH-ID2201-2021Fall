@@ -4,12 +4,12 @@
 
 % tutorial lamport clock利用sendRecv排序的逻辑放在log层，timer只负责计数，这里我在timer中也包含SendRecv信息，因为我认为SendRecv也是一个dimension to repersent time
 
-new(na, _Name, _ProcessNames) ->
+new(na, _Name, _Names) ->
     na;
-new(lamport, Name, _ProcessNames) ->
+new(lamport, Name, _Names) ->
     {lamport, Name, 0}; % {type, whoseTime, localTime}
 % e.g. {vector, 'a', #{'a': 1, 'b': 2, 'c': 3}}
-new(vector, Name, _ProcessNames) ->
+new(vector, Name, _Names) ->
     {vector, Name, #{}}.
 
 % Event, wrapping time, used by logger
@@ -75,7 +75,7 @@ new_record(ClockType) ->
 % return {UpdatedRecords, SafeEvents}
 add_event(Records, Event) ->
     % add event to record, then start to check
-    {_SendRecv, Name, _RemoteName, Timer, _Msg, _RealTime} = Event, % 后续改vector可能只改这里
+    {_, _, _, Timer, _, _} = Event, % we only use info from timer here
     case Timer of
         na ->
             {Records, [Event]}; % no need to buffer, return this event immediately
@@ -94,77 +94,83 @@ add_event(Records, Event) ->
                     
         {vector, Name, _Map} ->
             case maps:find(Name, Records) of
-                error -> Records1 = Records#{Name => {#{}, []}};
+                error -> Records1 = Records#{Name => {#{}, [], []}};
                 _Else -> Records1 = Records
             end,
-            #{Name := {LocalSendedRecord, LocalWaitingEvents}} = Records1,
+            #{Name := {SendedRecord, LocalWaitingEvents, LocalNotify}} = Records1,
             LocalWaitingEvents1 = [Event|LocalWaitingEvents],
-            Records2 = Records#{Name => {LocalSendedRecord, LocalWaitingEvents1}},
+            Records2 = Records#{Name => {SendedRecord, LocalWaitingEvents1, LocalNotify}},
             process_vector(Records2, Name, [], []) % use lists:member for now, can be optimized to use set
     end.
 
-% JobList -> [ProcessName]
-process_vector(Records, ProcessName, SafeEvents, JobList) ->
-    % io:format("now at ~p~n", [ProcessName]),
+% JobList -> [Name]
+process_vector(Records, Name, SafeEvents, JobList) ->
     tester ! {queue, sumRecordQueue(Records)},
-    #{ProcessName := {LocalSendedRecord, LocalWaitingEvents}} = Records,
-    case length(LocalWaitingEvents) of
+    #{Name := {SendedRecord, WaitingEvents, NotifyList}} = Records,
+    case length(WaitingEvents) of
         0 -> {Records, SafeEvents};
         _ ->
-            [Event|LocalRestWaitingEvents] = LocalWaitingEvents,
-            {SendRecv, Name, RemoteName, {vector, Name, LocalMap}, _Msg, _RealTime} = Event,
-            % io:format("Msg ~p SendRecv ~p~n", [_Msg, SendRecv]),
+            [Event|RestWaitingEvents] = WaitingEvents,
+            % I used the sendRecv, LocalThreadName, RemoteThreadName info here for simplicity
+            % these info could be infered from the vector stamp, except RemoteName can only be infered from recv event.
+            {SendRecv, Name, RemoteName, {vector, Name, LocalMap}, _, _} = Event,
+
+            % remote maybe not existed here
+            case maps:find(RemoteName, Records) of
+                error -> Records3 = Records#{RemoteName => {#{}, [], []}}; % {sendWithoutRecvRecord, MsgBuffer, ProcessesWaitingForSendingEvent}
+                _Elsee -> Records3 = Records
+            end,
+
+            #{RemoteName := {RemoteSendedRecord, RemoteWaiting, RemoteNotifyList}} = Records3,
             case SendRecv of
                 recv ->
-                    % remote maybe not existed here
-                    case maps:find(RemoteName, Records) of
-                        error -> RecordsTmp = Records#{RemoteName => {#{}, []}};
-                        _Elsee -> RecordsTmp = Records
-                    end,
-
-                    #{RemoteName := {RemoteSendedRecord, RemoteWaiting}} = RecordsTmp,
                     #{RemoteName := RemoteSendTime} = LocalMap,
+
                     case maps:find(RemoteSendTime, RemoteSendedRecord) of
-                        error -> % not sended yet, block here, seek next job
-                            Records1 = Records,
+                        error -> % not sended yet, block here, add notifier to remote, seek next job
+                            case lists:member(Name, RemoteNotifyList) of
+                                false -> RemoteNotifyList1 = RemoteNotifyList ++ [Name];
+                                true -> RemoteNotifyList1 = RemoteNotifyList
+                            end,
+                            Records1 = Records3#{RemoteName => {RemoteSendedRecord, RemoteWaiting, RemoteNotifyList1}},
                             SafeEvents1 = SafeEvents,
                             Block = true,
                             JobList1 = JobList;
-                        {ok, _RemoteSendedEvent} -> % already logged, safe to go
-                            % io:format("here~n"),
-                            RemoteSendedRecord1 = maps:remove(RemoteSendTime, RemoteSendedRecord), % clear this send event
-                            Records2 = Records#{RemoteName => {RemoteSendedRecord1, RemoteWaiting}},
+                        {ok, _RemoteSendedEvent} -> % perr send event exists, safe to log
                             SafeEvents1 = SafeEvents ++ [Event], 
-                            Records1 = Records2#{ProcessName => {LocalSendedRecord, LocalRestWaitingEvents}}, % remove this record from waitlist
+                            Records2 = Records3#{RemoteName => {maps:remove(RemoteSendTime, RemoteSendedRecord), RemoteWaiting, lists:delete(Name, RemoteNotifyList)}}, % clear record of send event
+                            Records1 = Records2#{Name => {SendedRecord, RestWaitingEvents, NotifyList}}, % remove this record from waitlist
                             Block = false,
                             JobList1 = JobList
                     end;
                 send ->
                     % does not block in any case
                     #{Name := EventTime} = LocalMap,
-                    LocalSendedRecord1 = LocalSendedRecord#{EventTime => Event},
+                    SendedRecord1 = SendedRecord#{EventTime => Event},
                     SafeEvents1 = SafeEvents ++ [Event],
-                    Records1 = Records#{ProcessName => {LocalSendedRecord1, LocalRestWaitingEvents}},
+                    Records1 = Records3#{Name => {SendedRecord1, RestWaitingEvents, NotifyList}},
                     Block = false,
-                    case lists:member(RemoteName, JobList) of 
-                        false -> JobList1 = lists:append(JobList, [RemoteName]);
-                        true -> JobList1 = JobList
-                    end
-                    % it is possible in queue [recv, send, send ...more sends]
-                    % but in this assignment, queue length in each process never exceeds 2
+                    
+                    % add all notify to jobList, if we know peer, complexity can be reduced O(1) 
+                    JobList1 = lists:foldl(fun(Ele, JobListTmp) ->
+                        case lists:member(Ele, JobListTmp) of
+                            false -> lists:append(JobListTmp, [Ele]);
+                            true -> JobListTmp
+                        end
+                    end, JobList, NotifyList)
             end,
 
             % if self block or self wl empty, change joblist   
             if
-                (not Block) and (length(LocalRestWaitingEvents) =/= 0) ->
-                    process_vector(Records1, ProcessName, SafeEvents1, JobList1);
+                (not Block) and (length(RestWaitingEvents) =/= 0) ->
+                    process_vector(Records1, Name, SafeEvents1, JobList1);
                 true ->
                     % next job
                     case length(JobList1) of
                         0 -> {Records1, SafeEvents1};
                         _Else -> 
-                            [NextProcessName|Rest] = JobList1,
-                            process_vector(Records1, NextProcessName, SafeEvents1, Rest)
+                            [NextName|Rest] = JobList1,
+                            process_vector(Records1, NextName, SafeEvents1, Rest)
                     end
             end
     end.
@@ -264,11 +270,11 @@ sumRecordQueue(Records) ->
 
 % 如果是sending，说明有前置事件（除非N=1，那么可以输出，检查timestamp是否等于N-1，是的话可以直接输出，同时查找是否有其他process的N+1 recv
 
-% new_process_timer(na, _ProcessNames) ->
+% new_process_timer(na, _Names) ->
 %     #{};
-% new_process_timer(lamport, ProcessNames) ->
-%     lists:foldl(fun(Ele, Acc) -> Acc#{Ele => #{0 => {lamport, Ele, {-}}}} end, #{}, ProcessNames).
-% new_process_timer(vector, ProcessNames) ->
+% new_process_timer(lamport, Names) ->
+%     lists:foldl(fun(Ele, Acc) -> Acc#{Ele => #{0 => {lamport, Ele, {-}}}} end, #{}, Names).
+% new_process_timer(vector, Names) ->
 %     lists:foldl(fun(Ele, Acc) -> Acc#{Ele => #{0 => {vector, Ele, }}})
 
 % Timer, string, Map{string -> Map{LocalTime -> {Timer, Msg}}}
@@ -279,10 +285,10 @@ sumRecordQueue(Records) ->
 %     % initialize if ProcessTimers not initialized
 %     ProcessTimers#{na => Msg}; % for na, we just store it in a new map, later when calling safelog, we take it out
 % record(Timer, Msg, ProcessTimers) ->
-%     {_AnyTimerType, ProcessName, _LocalTime} = Timer,
-%     #{ProcessName := ProcessTimer} = ProcessTimers,
-%     ProcessTimer1 = ProcessTimer#{local_time(Timer, ProcessName) => {Timer, Msg}},
-%     ProcessTimers#{ProcessName => ProcessTimer1}.
+%     {_AnyTimerType, Name, _LocalTime} = Timer,
+%     #{Name := ProcessTimer} = ProcessTimers,
+%     ProcessTimer1 = ProcessTimer#{local_time(Timer, Name) => {Timer, Msg}},
+%     ProcessTimers#{Name => ProcessTimer1}.
 
 
 % % if map empty, put empty here, meaning waiting for send at 1 or recv at any
@@ -308,7 +314,7 @@ sumRecordQueue(Records) ->
 %         % 无法根据当前事件推断下一事件时间，因为存在时间跳跃
 %         {lamport, {LocalTime, SendRecv}} ->
 
-% % ProcessTimers: map[ProcessName]map[LocalTime, {Timer, Msg}], see record/4 upper
+% % ProcessTimers: map[Name]map[LocalTime, {Timer, Msg}], see record/4 upper
 % % recv min is 2, send min is 1
 % % 每个事件完成输出后，check是否有其他事件显式依赖这一事件
 % % 那么如何判断每个进程现在正在依赖谁呢
@@ -329,15 +335,15 @@ sumRecordQueue(Records) ->
 %     end.
 
 
-% local_time(Timer, ProcessName) ->
+% local_time(Timer, Name) ->
 %     case Timer of 
 %         na ->
 %             na; % code should not be here.
 %         {lamport, _Name, LocalTime} ->
 %             LocalTime;
 %         {vector, Vectors} ->
-%             #{ProcessName := LocalVector} = Vectors,
-%             #{ProcessName := LocalTime} = LocalVector,
+%             #{Name := LocalVector} = Vectors,
+%             #{Name := LocalTime} = LocalVector,
 %             LocalTime
 %     end.    
 
@@ -352,6 +358,6 @@ sumRecordQueue(Records) ->
     %     Acc#{Ele => list_to_tuple(
     %         (fun BuildList(0, Lst) -> Lst;
     %              BuildList(N, Lst) -> BuildList(N - 1, [0|Lst])
-    %         end)(length(ProcessNames), [])
+    %         end)(length(Names), [])
     %     )}
-    % end, #{}, ProcessNames).
+    % end, #{}, Names).
