@@ -2,7 +2,8 @@ srcDir=src
 targetDir=output
 
 SLEEP=400
-JITTER=1
+JITTER=0
+CLOCK=lamport
 
 all: build
 
@@ -19,4 +20,4 @@ build: clear cp
 	@echo "compile done"
 
 run:
-	@cd $(targetDir); erl -pa $(targetDir) -eval 'main:run($(SLEEP), $(JITTER))'
+	@cd $(targetDir); erl -pa $(targetDir) -eval 'main:run($(SLEEP), $(JITTER), $(CLOCK))'
