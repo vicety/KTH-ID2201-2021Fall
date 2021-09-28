@@ -15,7 +15,6 @@ init(TimerType, InitialTime) ->
 loop(InitialTime, Record, Accepted, Printed) ->
     receive
         {log, LogFrom, Timer, RealTime, {SendRecv, MsgFrom, MsgTo, Msg}} ->
-
             FormatedMsgFunc = fun() -> log(LogFrom, RealTime, SendRecv, MsgFrom, MsgTo, Timer, Msg, InitialTime) end,
             case SendRecv of
                 send ->

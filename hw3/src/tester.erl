@@ -48,7 +48,7 @@ loop(NextSeqNum, Maps, DisorderCnt, CasualDisorderCnt, Cnt, RealTimes, QueueSize
             % io:format("Disorder Rate: [~p/~p = ~p] Casual Disorder Rate: [~p/~p] = ~p~n", [DisorderCnt, Cnt, DisorderCnt/Cnt, CasualDisorderCnt, Cnt, CasualDisorderCnt/Cnt])
             io:format("Casual Disorder Rate: [~p/~p] = ~p~n", [CasualDisorderCnt, Cnt, CasualDisorderCnt/Cnt]),
             io:format("Maximum Queue Size: ~p~n", [QueueSize]),
-            io:format("Acc Queue Size: ~p~n", [QueueSizeAcc/Cnt])
+            io:format("Avg Queue Size: ~p~n", [QueueSizeAcc/Cnt])
     end.
 
 count_reverse_pairs(Arr) ->

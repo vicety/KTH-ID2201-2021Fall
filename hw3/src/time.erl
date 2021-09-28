@@ -83,13 +83,15 @@ add_event(Records, Event) ->
             {TimeForEachProcess, Queue} = Records,
             Queue1 = lists:keysort(2, Queue ++ [{Name, EventTime, Event}]),
             tester ! {queue, length(Queue1)},
-            TimeForEachProcess1 = lists:keyreplace(Name, 1, TimeForEachProcess, {Name, EventTime}),
+            % mark-red: this only works with FIFO log sending(synchronous log sending), when async, we need to order the log request using some order info, using TCP is also ok
+            TimeForEachProcess1 = lists:keyreplace(Name, 1, TimeForEachProcess, {Name, EventTime}),  
             MinTime = lists:foldl(fun({_Name, Time}, Acc) ->
                 min(Acc, Time)
             end, inf, TimeForEachProcess1),
             {SafeEvents, Rest} = lists:splitwith(fun({_Node, Time, _Event}) ->
                 Time < MinTime
             end, Queue1),
+            % io:format("mintime=[~p], safeevents=[~p]~n", [MinTime, SafeEvents]),
             {{TimeForEachProcess1, Rest}, lists:map(fun(Ele) -> element(3, Ele) end, SafeEvents)};
                     
         {vector, Name, _Map} ->
@@ -197,9 +199,14 @@ sumRecordQueue(Records) ->
 
 
 
+% TODO: lamport的可以适用于同时到达一个进程的多个recv，vector的能否适用？
+% 是否需要FIFO的前提条件？比如说使用UDP，后发先至，并不会影响后发先至、先发后至这两个事件对的因果日志输出
+% vector算法主要思想：发送不阻塞，因为发送永远是因，接收永远需要等待对端发送到来才能输出
+% 你如何验证正确性: 利用物理时钟,与日志输出进行比较
+% TODO: 1. 修改代码，比如说
 
-
-
+% ---
+% ---
 
 
 

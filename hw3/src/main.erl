@@ -14,6 +14,12 @@ run(Sleep, Jitter, ClockType) ->
     worker:peers(B, [{A, '1'}, {C, '3'}, {D, '4'}]),
     worker:peers(C, [{A, '1'}, {B, '2'}, {D, '4'}]),
     worker:peers(D, [{A, '1'}, {B, '2'}, {C, '3'}]),
+
+    % one process only send, lamport perform bad in this scenario
+    % worker:peers(A, [{B, '2'}, {D, '4'}]),
+    % worker:peers(B, [{A, '1'}, {D, '4'}]),
+    % worker:peers(C, [{A, '1'}, {B, '2'}, {D, '4'}]),
+    % worker:peers(D, [{A, '1'}, {B, '2'}]),
     timer:sleep(4000),
 
     % add new worker
@@ -30,6 +36,7 @@ run(Sleep, Jitter, ClockType) ->
     worker:stop(C),
     worker:stop(D),
     % worker:stop(E),
+    timer:sleep(500), % ensure all async logs are received
     log:stop(Log),
     timer:sleep(500),
     tester:stop().
