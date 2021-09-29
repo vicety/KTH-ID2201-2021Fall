@@ -15,7 +15,7 @@ init(TimerType, InitialTime) ->
 loop(InitialTime, Record, Accepted, Printed) ->
     receive
         {log, LogFrom, Timer, RealTime, {SendRecv, MsgFrom, MsgTo, Msg}} ->
-            FormatedMsgFunc = fun() -> log(LogFrom, RealTime, SendRecv, MsgFrom, MsgTo, Timer, Msg, InitialTime) end,
+            FormatedMsgFunc = fun() -> log(LogFrom, RealTime, SendRecv, MsgFrom, MsgTo, Timer, Msg, InitialTime, Accepted) end,
             case SendRecv of
                 send ->
                     Event = time:event(SendRecv, MsgFrom, MsgTo, Timer, FormatedMsgFunc, RealTime);
@@ -49,8 +49,8 @@ loop(InitialTime, Record, Accepted, Printed) ->
 log_str(LogFrom, RealTime, SendRecv, MsgFrom, MsgTo, Timer, Msg, InitialTime) ->
     list_to_atom(io_lib:format("[~p] [RealTime=~p] [~w]: ~p msg from [~p] to [~p] localSeqNum [~p]~n", [Timer, RealTime-InitialTime, LogFrom, SendRecv, MsgFrom, MsgTo, Msg])).
   
-log(LogFrom, RealTime, SendRecv, MsgFrom, MsgTo, Timer, Msg, InitialTime) ->   
-    {Msg, fun() -> io:format("[~p] [RealTime=~p] [~w]: ~p msg from [~p] to [~p] localSeqNum [~p]~n", [Timer, RealTime-InitialTime, LogFrom, SendRecv, MsgFrom, MsgTo, Msg]) end}.
+log(LogFrom, RealTime, SendRecv, MsgFrom, MsgTo, Timer, Msg, InitialTime, LoggerSeq) ->   
+    {Msg, fun() -> io:format("[~p] [LoggerSeq=~p] [RealTime=~p] [~w]: ~p msg from [~p] to [~p] localSeqNum [~p]~n", [Timer, LoggerSeq, RealTime-InitialTime, LogFrom, SendRecv, MsgFrom, MsgTo, Msg]) end}.
 
 
 

@@ -1,9 +1,7 @@
 srcDir=src
 targetDir=output
 
-SLEEP=400
-JITTER=0
-CLOCK=lamport
+FUN=gsm1
 
 all: build
 
@@ -20,4 +18,4 @@ build: clear cp
 	@echo "compile done"
 
 run:
-	@cd $(targetDir); erl -pa $(targetDir) -eval 'main:run($(SLEEP), $(JITTER), $(CLOCK))'
+	@cd $(targetDir); erl -pa $(targetDir) -eval 'worker:$(FUN)()'

@@ -36,6 +36,7 @@ loop(Name, Log, Peers, Sleep, Jitter, Timer, LocalSeqNum) ->
     %         Wait = rand:uniform(Sleep)
     % end,
     Wait = rand:uniform(Sleep),
+    % TODO: receive should not interrupt send interval, send should not block recv
     receive
         {new_peer, Peer} ->
             loop(Name, Log, Peers ++ [Peer], Sleep, Jitter, Timer, LocalSeqNum);
@@ -45,9 +46,9 @@ loop(Name, Log, Peers, Sleep, Jitter, Timer, LocalSeqNum) ->
             SendLogFun = fun() -> Log ! {log, Name, Timer1, RealTime, {recv, RemoteName, Name, Msg}} end,
 
             % jitter(Jitter),
-            % SendLogFun(),
+            SendLogFun(),
             
-            async_jitter(Jitter, SendLogFun),
+            % async_jitter(Jitter, SendLogFun),
 
             % async_jitter(Jitter, fun() -> Name ! {LocalSeqNum, SendLogFun} end),
 
@@ -76,10 +77,11 @@ loop(Name, Log, Peers, Sleep, Jitter, Timer, LocalSeqNum) ->
         PeerPID ! {msg, Name, Timer1, Message},
         SendLogFun = fun() -> Log ! {log, Name, Timer1, RealTime, {send, Name, PeerName, Message}} end,
 
-        % jitter(Jitter),
-        % SendLogFun(),
+        jitter(Jitter),
+        % jitter(),
+        SendLogFun(),
 
-        async_jitter(Jitter, SendLogFun),
+        % async_jitter(Jitter, SendLogFun),
 
         % async_jitter(Jitter, fun() -> Name ! {LocalSeqNum, SendLogFun} end),
 

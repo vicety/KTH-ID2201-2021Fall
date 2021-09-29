@@ -1,6 +1,6 @@
 -module(gui).
--define(width, 200).
--define(height, 200).
+-define(width, 500).
+-define(height, 300).
 -export([start/2]).
 -include_lib("wx/include/wx.hrl").
 
