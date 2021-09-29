@@ -84,7 +84,11 @@ election(Id, Master, N, Last, Slaves, [_|Group]) ->
             end,
 
             % TODO but still need to spread new view out before this node is allowed to crash... 
-            
+            % just to solve this issue temprorarily, we could use last node as new node's first contactor, but node may down too
+
+            % maybe implementing a rcast will solve all these
+            % we just stop here for gsm3 and leave this problem to gsm4
+
             % finish leader's requet
             bcast(Id, Last, Rest), % what about down now
             bcast(Id, {view, N, Slaves, Group}, Rest), % TODO: should make sure bcast success
