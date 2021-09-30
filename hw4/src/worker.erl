@@ -73,31 +73,30 @@ gsm3() ->
 
 % ======= gsm4 =========
 gsm4() ->
-	A = worker:start(1, gsm4, 114, 2000),
-	timer:sleep(100),
-	B = worker:start(2, gsm4, 115, A, 2000),
-	timer:sleep(100),
-	C = worker:start(3, gsm4, 116, B, 2000),
-	timer:sleep(100),
-	D = worker:start(4, gsm4, 118, B, 2000),
-	timer:sleep(100),
-	E = worker:start(5, gsm4, 119, B, 2000).
+	spawn(fun() ->
+		% id, rnd, replica
+		{Id, Rnd, Replica, Sleep} = {1, 123, 5, 2000},
+ 		{ok, Cast} = apply(gsm4, start, [Id, Rnd, Replica]),
+		Color = ?color,
+		% worker loop
+		init_cont(Id, Rnd, Cast, Color, Sleep)
+	end).
 
 % assume communication to this thread is reliable
-new_worker(Expect) ->
-	register(new, spawn_link(fun() -> new_worker_loop(Expect) end)).
+% new_worker(Expect) ->
+% 	register(new, spawn_link(fun() -> new_worker_loop(Expect) end)).
 
-new_worker_loop(Expect) ->
-	receive
-		{new, Node} ->
-			timer:sleep(100),
-			{{Year, Month, Day}, {Hour, Minute, Second}} = calendar:now_to_datetime(erlang:now()),
-			Time = lists:flatten(io_lib:format("~4..0w-~2..0w-~2..0wT~2..0w:~2..0w:~2..0w",[Year,Month,Day,Hour,Minute,Second])),
-			io:format("Time=[~p] spawn ~p~n", [Time, Expect]),
-			worker:start(Expect, gsm3, rand:uniform(1000), Node, 2000),
-			Node ! ack,
-			new_worker_loop(Expect+1)
-	end.
+% new_worker_loop(Expect) ->
+% 	receive
+% 		{new, Node} ->
+% 			timer:sleep(100),
+% 			{{Year, Month, Day}, {Hour, Minute, Second}} = calendar:now_to_datetime(erlang:now()),
+% 			Time = lists:flatten(io_lib:format("~4..0w-~2..0w-~2..0wT~2..0w:~2..0w:~2..0w",[Year,Month,Day,Hour,Minute,Second])),
+% 			io:format("Time=[~p] spawn ~p~n", [Time, Expect]),
+% 			worker:start(Expect, gsm3, rand:uniform(1000), Node, 2000),
+% 			Node ! ack,
+% 			new_worker_loop(Expect+1)
+% 	end.
 
 
 % Start a worker given:
