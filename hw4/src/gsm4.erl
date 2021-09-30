@@ -7,7 +7,7 @@
 
 % 目标：增加故障拉起新的
 
-% 100 150 crashN跑不出问题
+% 25 100 crashN跑不出问题
 
 
 start(Id, Rnd, Replica) ->
@@ -59,39 +59,41 @@ init_slave(Id, Rnd, Grp, Master, Replica) ->
 % Slaves: group level, do not conatin self
 % Group: application level, first is self, than slavess
 leader(Id, Master, N, Slaves, Group, Replica) ->
-    case length(Group) of
-        Replica ->
-            receive
-                {mcast, Msg} ->
-                    % io:format("Id=[~p] leader send msg:[~p]~n", [Id, Msg]),
-                    bcast(Id, {msg, N, Msg}, Slaves),
-                    Master ! Msg,
-                    leader(Id, Master, N+1, Slaves, Group, Replica);
-                
-                stop ->
-                    ok
-            end;
-        _Other ->
-            [Master|_] = Group,
-            next_id ! {get, self()},
-            receive
-                {next_id, NextID} ->
-                    ok
-            end,
-            % worker_start_slave(NextID, rand:uniform(10000), Master, Replica), % 给master发也是传给它的cast的，有可能master还没起并且
-            worker_start_slave(NextID, rand:uniform(10000), self(), Replica),
-            io:format("Leader ~p waiting join msg from ~p~n", [Id, NextID]), % 可能是gui还没起来，妈的
-            receive
-                % node: wrk -> master, peer -> slave(group layer), 
-                {join, Wrk, Peer} ->
-                    io:format("Id [~p] add new Peer ~p Wrk ~p~n", [Id, Peer, Wrk]),
-                    Slaves2 = lists:append(Slaves, [Peer]),
-                    Group2 = lists:append(Group, [Wrk]),
-                    bcast(Id, {view, N, [self()|Slaves2], Group2}, Slaves2),
-                    Master ! {view, Group2},
-                    timer:sleep(200),
-                    leader(Id, Master, N+1, Slaves2, Group2, Replica)
-            end
+    receive
+        {mcast, Msg} ->
+            % io:format("Id=[~p] leader send msg:[~p]~n", [Id, Msg]),
+            bcast(Id, {msg, N, Msg}, Slaves),
+            Master ! Msg,
+            leader(Id, Master, N+1, Slaves, Group, Replica);
+        stop ->
+            ok
+    % 如果优先处理加入事件，那么会出现只有1启动了worker，也就是说只有单点有历史状态（尽管这个状态我们知道是0），在启动2345的过程中，会有多次bcast，一旦1fail，状态就丢失了，失败风险很高
+    after 200 ->
+        case length(Group) of
+            Replica ->
+                leader(Id, Master, N, Slaves, Group, Replica);
+            _Other ->
+                [Master|_] = Group,
+                next_id ! {get, self()},
+                receive
+                    {next_id, NextID} ->
+                        ok
+                end,
+                % worker_start_slave(NextID, rand:uniform(10000), Master, Replica), % 给master发也是传给它的cast的，有可能master还没起并且
+                worker_start_slave(NextID, rand:uniform(10000), self(), Replica),
+                io:format("Leader ~p waiting join msg from ~p~n", [Id, NextID]),
+                receive
+                    % node: wrk -> master, peer -> slave(group layer), 
+                    {join, Wrk, Peer} ->
+                        io:format("Id [~p] add new Peer ~p Wrk ~p~n", [Id, Peer, Wrk]),
+                        Slaves2 = lists:append(Slaves, [Peer]),
+                        Group2 = lists:append(Group, [Wrk]),
+                        bcast(Id, {view, N, [self()|Slaves2], Group2}, Slaves2),
+                        Master ! {view, Group2},
+                        timer:sleep(200),
+                        leader(Id, Master, N+1, Slaves2, Group2, Replica)
+                end
+        end
     end.
                 
             
@@ -184,180 +186,10 @@ crash(Id) ->
     end.
 
 
-
-% 
-
-%  ================= CASE 1 ====================
-
-% 1> spawned leader 1 <0.80.0>
-% 1> here
-% 1> spawned [2,<0.85.0>], join from <0.78.0>
-% 1> Id [1] add new Peer <0.85.0> Wrk <0.84.0>
-% 1> slave 2 recv first view {view,1,[<0.80.0>,<0.85.0>],[<0.78.0>,<0.84.0>]} monitoring <0.80.0>
-% 1> here
-% 1> spawned [3,<0.90.0>], join from <0.78.0>
-% 1> Id [1] add new Peer <0.90.0> Wrk <0.89.0>
-% 1> leader 1 crash
-% 1> Id [2] recv [{view,2,
-%                    [<0.80.0>,<0.85.0>,<0.90.0>],
-%                    [<0.78.0>,<0.84.0>,<0.89.0>]}]
-% 1> slave 2 detect <0.80.0> down
-% 1> Leader is [2, <0.85.0>] Last {view,2,
-%                                    [<0.80.0>,<0.85.0>,<0.90.0>],
-%                                    [<0.78.0>,<0.84.0>,<0.89.0>]}
-% 1> last is view {view,2,
-%                    [<0.80.0>,<0.85.0>,<0.90.0>],
-%                    [<0.78.0>,<0.84.0>,<0.89.0>]}
-% 1> resend N as expected
-% 1> slave 3 recv first view {view,2,
-%                               [<0.80.0>,<0.85.0>,<0.90.0>],
-%                               [<0.78.0>,<0.84.0>,<0.89.0>]} monitoring <0.80.0>
-% 1> here
-% 1> Id [3] recv [{view,3,[<0.85.0>,<0.90.0>],[<0.84.0>,<0.89.0>]}]
-% 1> spawned [4,<0.92.0>], join from <0.84.0>
-% 1> Id [3] Different Leader [<0.85.0>] From Local [<0.80.0>], suspect to be stale message form new leader
-% 1> slave 3 detect <0.80.0> down
-% 1> slave 3 monitored Last Leader <0.78.0> fail, monitoring new leader <0.85.0>
-% 1> Id:[4] Reason:["no reply from leader"]
-% 1> =ERROR REPORT==== 30-Sep-2021::22:06:47.707000 ===
-% Error in process <0.91.0> with exit value:
-% {{badmatch,{error,"no reply from leader"}},
-%  [{gsm4,'-worker_start_slave/4-fun-0-',4,
-%         [{file,"output/gsm4.erl"},{line,33}]}]}
-
-% 为什么4发给2的消息没有被收到？
-
-
-
-
-
-
-
-
-
-
-
-% 考虑是gui还没起，这里把消息发给master改成直接发给caster，因为给master也是转给caster，况且master可能还没起，日志如下
-% crashN=100
-
-% 1> Id 1, <0.80.0> starting gui here
-% 1> spawned leader 1 <0.80.0>
-% 1> Leader 1 waiting join msg from 2
-% 1> spawned [2,<0.84.0>], join from <0.80.0>
-% 1> Id [1] add new Peer <0.84.0> Wrk <0.83.0>
-% 1> slave 2 recv first view {view,1,[<0.80.0>,<0.84.0>],[<0.78.0>,<0.83.0>]} monitoring <0.80.0>
-% 1> Id 2 master <0.83.0> is waiting for state_request
-% 1> Leader 1 waiting join msg from 3
-% 1> spawned [3,<0.90.0>], join from <0.80.0>
-% 1> Id [1] add new Peer <0.90.0> Wrk <0.89.0>
-% 1> leader 1 crash
-% 1> Id [2] recv [{view,2,
-%                    [<0.80.0>,<0.84.0>,<0.90.0>],
-%                    [<0.78.0>,<0.83.0>,<0.89.0>]}]
-% 1> slave 2 detect <0.80.0> down
-% 1> Id 2 master <0.83.0> is waiting for state_request
-% 1> Leader is [2, <0.84.0>] Last {view,2,
-%                                    [<0.80.0>,<0.84.0>,<0.90.0>],
-%                                    [<0.78.0>,<0.83.0>,<0.89.0>]}
-% 1> last message is view {view,2,
-%                            [<0.80.0>,<0.84.0>,<0.90.0>],
-%                            [<0.78.0>,<0.83.0>,<0.89.0>]}
-% 1> Id [2] bcasting new view after last leader [<0.78.0>] crash
-% 1> slave 3 recv first view {view,2,
-%                               [<0.80.0>,<0.84.0>,<0.90.0>],
-%                               [<0.78.0>,<0.83.0>,<0.89.0>]} monitoring <0.80.0>
-% 1> Id [3] recv [{view,3,[<0.84.0>,<0.90.0>],[<0.83.0>,<0.89.0>]}]
-% 1> Id 2 master <0.83.0> is waiting for state_request
-% 1> Id 3 master <0.89.0> is waiting for state_request
-% 1> Leader 2 waiting join msg from 4
-% 1> Id [3] Different Leader [<0.84.0>] From Local [<0.80.0>], suspect to be stale message form new leader
-% 1> spawned [4,<0.92.0>], join from <0.84.0>
-% 1> slave 3 detect <0.80.0> down
-% 1> Id [2] add new Peer <0.92.0> Wrk <0.91.0>
-% 1> slave 3 monitored Last Leader <0.78.0> fail, monitoring new leader <0.84.0>
-% 1> Id [3] recv [{view,4,
-%                    [<0.84.0>,<0.90.0>,<0.92.0>],
-%                    [<0.83.0>,<0.89.0>,<0.91.0>]}]
-% 1> slave 4 recv first view {view,4,
-%                               [<0.84.0>,<0.90.0>,<0.92.0>],
-%                               [<0.83.0>,<0.89.0>,<0.91.0>]} monitoring <0.84.0>
-% 1> Id 2 master <0.83.0> is waiting for state_request
-% 1> Id 3 master <0.89.0> is waiting for state_request
-% 1> Id 4 master <0.91.0> is waiting for state_request
-% 1> Leader 2 waiting join msg from 5
-% 1> spawned [5,<0.94.0>], join from <0.84.0>
-% 1> Id [2] add new Peer <0.94.0> Wrk <0.93.0>
-% 1> Id [3] recv [{view,5,
-%                    [<0.84.0>,<0.90.0>,<0.92.0>,<0.94.0>],
-%                    [<0.83.0>,<0.89.0>,<0.91.0>,<0.93.0>]}]
-% 1> Id [4] recv [{view,5,
-%                    [<0.84.0>,<0.90.0>,<0.92.0>,<0.94.0>],
-%                    [<0.83.0>,<0.89.0>,<0.91.0>,<0.93.0>]}]
-% 1> slave 5 recv first view {view,5,
-%                               [<0.84.0>,<0.90.0>,<0.92.0>,<0.94.0>],
-%                               [<0.83.0>,<0.89.0>,<0.91.0>,<0.93.0>]} monitoring <0.84.0>
-% 1> Id 2 master <0.83.0> is waiting for state_request
-% 1> Id 3 master <0.89.0> is waiting for state_request
-% 1> Id 4 master <0.91.0> is waiting for state_request
-% 1> Id 5 master <0.93.0> is waiting for state_request
-% 1> Leader 2 waiting join msg from 6
-% 1> spawned [6,<0.96.0>], join from <0.84.0>
-% 1> Id [2] add new Peer <0.96.0> Wrk <0.95.0>
-% 1> Id [3] recv [{view,6,
-%                    [<0.84.0>,<0.90.0>,<0.92.0>,<0.94.0>,<0.96.0>],
-%                    [<0.83.0>,<0.89.0>,<0.91.0>,<0.93.0>,<0.95.0>]}]
-% 1> Id [4] recv [{view,6,
-%                    [<0.84.0>,<0.90.0>,<0.92.0>,<0.94.0>,<0.96.0>],
-%                    [<0.83.0>,<0.89.0>,<0.91.0>,<0.93.0>,<0.95.0>]}]
-% 1> Id [5] recv [{view,6,
-%                    [<0.84.0>,<0.90.0>,<0.92.0>,<0.94.0>,<0.96.0>],
-%                    [<0.83.0>,<0.89.0>,<0.91.0>,<0.93.0>,<0.95.0>]}]
-% 1> slave 6 recv first view {view,6,
-%                               [<0.84.0>,<0.90.0>,<0.92.0>,<0.94.0>,<0.96.0>],
-%                               [<0.83.0>,<0.89.0>,<0.91.0>,<0.93.0>,<0.95.0>]} monitoring <0.84.0>
-% 1> Id 2 master <0.83.0> is waiting for state_request
-% 1> Id 3 master <0.89.0> is waiting for state_request
-% 1> Id 4 master <0.91.0> is waiting for state_request
-% 1> Id 5 master <0.93.0> is waiting for state_request
-% 1> Id 6 master <0.95.0> is waiting for state_request
-% 1> Id [3] recv msg [{msg,7,{state_request,#Ref<0.2483591639.3155427329.135142>}}]
-% 1> Id 2 master <0.83.0> is waiting for state_request
-% 1> Id [4] recv msg [{msg,7,{state_request,#Ref<0.2483591639.3155427329.135142>}}]
-% 1> Id [5] recv msg [{msg,7,{state_request,#Ref<0.2483591639.3155427329.135142>}}]
-% 1> Id [6] recv msg [{msg,7,{state_request,#Ref<0.2483591639.3155427329.135142>}}]
-% 1> Id [3] recv msg [{msg,8,{state_request,#Ref<0.2483591639.3155427344.134891>}}]
-% 1> Id 3 master <0.89.0> rcvd state_request
-% 1> Id 2 master <0.83.0> is waiting for state_request
-% 1> Id [4] recv msg [{msg,8,{state_request,#Ref<0.2483591639.3155427344.134891>}}]
-% 1> Id 4 master <0.91.0> is waiting for state_request
-% 1> Id [5] recv msg [{msg,8,{state_request,#Ref<0.2483591639.3155427344.134891>}}]
-% 1> Id 5 master <0.93.0> is waiting for state_request
-% 1> Id [6] recv msg [{msg,8,{state_request,#Ref<0.2483591639.3155427344.134891>}}]
-% 1> Id 6 master <0.95.0> is waiting for state_request
-% 1> Id [3] recv msg [{msg,9,{state_request,#Ref<0.2483591639.3155427344.134903>}}]
-% 1> Id 2 master <0.83.0> is waiting for state_request
-% 1> Id [4] recv msg [{msg,9,{state_request,#Ref<0.2483591639.3155427344.134903>}}]
-% 1> Id 4 master <0.91.0> rcvd state_request
-% 1> Id [5] recv msg [{msg,9,{state_request,#Ref<0.2483591639.3155427344.134903>}}]
-% 1> Id 5 master <0.93.0> is waiting for state_request
-% 1> Id [6] recv msg [{msg,9,{state_request,#Ref<0.2483591639.3155427344.134903>}}]
-% 1> Id 6 master <0.95.0> is waiting for state_request
-% 1> Id [3] recv msg [{msg,10,{state_request,#Ref<0.2483591639.3155427344.134916>}}]
-% 1> Id 2 master <0.83.0> is waiting for state_request
-% 1> Id [4] recv msg [{msg,10,{state_request,#Ref<0.2483591639.3155427344.134916>}}]
-% 1> Id [5] recv msg [{msg,10,{state_request,#Ref<0.2483591639.3155427344.134916>}}]
-% 1> Id 5 master <0.93.0> rcvd state_request
-% 1> Id [6] recv msg [{msg,10,{state_request,#Ref<0.2483591639.3155427344.134916>}}]
-% 1> Id 6 master <0.95.0> is waiting for state_request
-% 1> Id 6 master <0.95.0> rcvd state_request
-
-% 可以发现process 2从未收到state_request，因为leader 1 crash了
-% 正常
-
-
-%  =========================== CASE 2 ============================
+%  =========================== CASE 1 ============================
 
 % 一个正常的case，1的窗口是能无条件产生的
+% 已经无法复现了，原因是代码改动，原先是优先创建新进程，N=100
 
 % 1> Id 1, <0.80.0> starting gui here
 % 1> spawned leader 1 <0.80.0>
@@ -566,3 +398,44 @@ crash(Id) ->
 % 1> Id [4] recv msg [{msg,26,{change,17}}]
 % 1> Id [5] recv msg [{msg,26,{change,17}}]
 % 1> Id [3] recv msg [{msg,26,{change,17}}]
+
+
+
+
+
+% =========================== CASE 2 ===========================
+% crashN = 20
+
+% 1> Id 1, <0.80.0> starting gui here
+% 1> spawned leader 1 <0.80.0>
+% 1> Leader 1 waiting join msg from 2
+% 1> spawned [2,<0.88.0>], join from <0.80.0>
+% 1> Id [1] add new Peer <0.88.0> Wrk <0.87.0>
+% 1> slave 2 recv first view {view,1,[<0.80.0>,<0.88.0>],[<0.78.0>,<0.87.0>]} monitoring <0.80.0>
+% 1> Id 2 master <0.87.0> is waiting for state_request
+% 1> leader 1 crash
+% 1> Id [2] recv msg [{msg,2,{change,2}}]
+% 1> Id [2] recv msg [{msg,3,{state_request,#Ref<0.474017969.215482372.121933>}}]
+% 1> Id 2 master <0.87.0> is waiting for state_request
+% 1> slave 2 detect <0.80.0> down
+% mark-red: process 2 received state_request (sent by himself), but process 1 (leader) dies before sending his init state, in this case the program cannot continue
+% 1> Id 2 master <0.87.0> rcvd state_request
+% 1> Leader is [2, <0.88.0>] Last {msg,3,
+%                                  {state_request,
+%                                      #Ref<0.474017969.215482372.121933>}}
+% 1> last message is msg {msg,3,{state_request,#Ref<0.474017969.215482372.121933>}}
+% 1> Id [2] bcasting new view after last leader [<0.78.0>] crash
+% 1> Leader 2 waiting join msg from 3
+% 1> spawned [3,<0.91.0>], join from <0.88.0>
+% 1> Id [2] add new Peer <0.91.0> Wrk <0.90.0>
+% 1> slave 3 recv first view {view,5,[<0.88.0>,<0.91.0>],[<0.87.0>,<0.90.0>]} monitoring <0.88.0>
+% 1> Id 3 master <0.90.0> is waiting for state_request
+% 1> Id [3] recv msg [{msg,6,{state_request,#Ref<0.474017969.215482372.121969>}}]
+% 1> Id 3 master <0.90.0> rcvd state_request
+% 1> Leader 2 waiting join msg from 4
+% 1> spawned [4,<0.93.0>], join from <0.88.0>
+% 1> Id [2] add new Peer <0.93.0> Wrk <0.92.0>
+% 1> Id [3] recv [{view,7,
+%                    [<0.88.0>,<0.91.0>,<0.93.0>],
+%                    [<0.87.0>,<0.90.0>,<0.92.0>]}]
+% ...................
