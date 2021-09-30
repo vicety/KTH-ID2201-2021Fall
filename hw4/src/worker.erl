@@ -145,8 +145,10 @@ join(Id, Cast) ->
 % and then wait for the, state
 
 state(Id, Ref) ->
+	io:format("Id ~p master ~p is waiting for state_request~n", [Id, self()]),
     receive
 	{state_request, Ref} ->
+		io:format("Id ~p master ~p rcvd state_request~n", [Id, self()]),
 	    receive
 		{state, Ref, Color} ->
 		    {ok, Color}
@@ -162,6 +164,7 @@ init_cont(Id, Rnd, Cast, Color, Sleep) ->
 	rand:seed(exsss, Rnd),
     % rand:seed(Rnd, Rnd, Rnd),
     Title = "Worker: " ++ integer_to_list(Id),
+	io:format("Id ~p, ~p starting gui here~n", [Id, Cast]),
     Gui = gui:start(Title, self()),
     Gui ! {color, Color}, 
     worker(Id, Cast, Color, Gui, Sleep),
