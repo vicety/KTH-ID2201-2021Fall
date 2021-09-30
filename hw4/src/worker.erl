@@ -6,7 +6,6 @@
 -define(change, 20).
 -define(color, {0,0,0}).
 
-% ======= gsm1 =========
 
 % no one dies
 
@@ -17,7 +16,6 @@ gsm1() ->
 	timer:sleep(100),
 	C = worker:start(3, gsm1, 116, B, 2000).
 
-% ======= gsm2 =========
 
 % process 1 very quick
 
@@ -33,7 +31,6 @@ gsm2() ->
 	E = worker:start(5, gsm2, 119, B, 3000).
 	% A ! stop.
 
-% ======= gsm3 =========
 % worker:gsm3().
 % {}
 % 
@@ -42,10 +39,6 @@ gsm2() ->
 
 % 会不会存在join不成功，也就是这个view未完全发送：不存在，目前不存在发送的第一个节点即非正确节点的情况
 % 会不会存在join成功，但是后续的color同步不成功：基本不存在，同上，选举机制确保了只要有节点存活就一定能继续传递，唯一的例外是，join的时候挂到只剩自己，而自己的worker还没起来，因此没有running的worker可以回应这个state_request
-
-% 好了，基本稳定，基于这个开始做4，加一个滚动重启
-
-% 存在问题：消息完全没法出去，就挂了，怎么办
 
 gsm3() ->
 	A = worker:start(1, gsm3, 2, 2000),
@@ -56,22 +49,8 @@ gsm3() ->
 	timer:sleep(200),
 	D = worker:start(4, gsm3, 565888, C, 2000),
 	timer:sleep(200),
-	E = worker:start(5, gsm3, 4565888, D, 2000).
+	_E = worker:start(5, gsm3, 4565888, D, 2000).
 
-% gsm3_restart() ->
-% 	A = worker:start(1, gsm3, 114, 2000),
-% 	timer:sleep(100),
-% 	B = worker:start(2, gsm3, 115, A, 2000),
-% 	timer:sleep(100),
-% 	C = worker:start(3, gsm3, 116, B, 2000),
-% 	timer:sleep(100),
-% 	D = worker:start(4, gsm3, 118, C, 2000),
-% 	timer:sleep(100),
-% 	E = worker:start(5, gsm3, 119, D, 2000),
-% 	timer:sleep(100),
-% 	new_worker(6).
-
-% ======= gsm4 =========
 gsm4() ->
 	spawn(fun() ->
 		% id, rnd, replica
@@ -82,21 +61,15 @@ gsm4() ->
 		init_cont(Id, Rnd, Cast, Color, Sleep)
 	end).
 
-% assume communication to this thread is reliable
-% new_worker(Expect) ->
-% 	register(new, spawn_link(fun() -> new_worker_loop(Expect) end)).
-
-% new_worker_loop(Expect) ->
-% 	receive
-% 		{new, Node} ->
-% 			timer:sleep(100),
-% 			{{Year, Month, Day}, {Hour, Minute, Second}} = calendar:now_to_datetime(erlang:now()),
-% 			Time = lists:flatten(io_lib:format("~4..0w-~2..0w-~2..0wT~2..0w:~2..0w:~2..0w",[Year,Month,Day,Hour,Minute,Second])),
-% 			io:format("Time=[~p] spawn ~p~n", [Time, Expect]),
-% 			worker:start(Expect, gsm3, rand:uniform(1000), Node, 2000),
-% 			Node ! ack,
-% 			new_worker_loop(Expect+1)
-% 	end.
+gsm5() ->
+	spawn(fun() ->
+		% id, rnd, replica
+		{Id, Rnd, Replica, Sleep} = {1, 123, 5, 2000},
+ 		{ok, Cast} = apply(gsm5, start, [Id, Rnd, Replica]),
+		Color = ?color,
+		% worker loop
+		init_cont(Id, Rnd, Cast, Color, Sleep)
+	end).
 
 
 % Start a worker given:
