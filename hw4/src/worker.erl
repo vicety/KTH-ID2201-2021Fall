@@ -16,29 +16,29 @@ gsm1() ->
 % ======= gsm2 =========
 % worker:gsm2().
 gsm2() ->
-	A = worker:start(1, gsm2, 114, 2000),
+	A = worker:start(1, gsm2, 114, 3000),
 	timer:sleep(100),
-	B = worker:start(2, gsm2, 115, A, 2000),
+	B = worker:start(2, gsm2, 115, A, 3000),
 	timer:sleep(100),
-	C = worker:start(3, gsm2, 116, B, 2000),
+	C = worker:start(3, gsm2, 116, B, 3000),
 	timer:sleep(100),
-	D = worker:start(4, gsm2, 118, B, 2000),
+	D = worker:start(4, gsm2, 118, B, 3000),
 	timer:sleep(100),
-	E = worker:start(5, gsm2, 119, B, 2000).
+	E = worker:start(5, gsm2, 119, B, 3000).
 	% A ! stop.
 
 % ======= gsm3 =========
 % worker:gsm3().
 gsm3() ->
 	A = worker:start(1, gsm3, 114, 2000),
-	timer:sleep(100),
+	timer:sleep(200),
 	B = worker:start(2, gsm3, 115, A, 2000),
-	timer:sleep(100),
+	timer:sleep(200),
 	C = worker:start(3, gsm3, 116, B, 2000),
-	timer:sleep(100),
-	D = worker:start(4, gsm3, 118, B, 2000),
-	timer:sleep(100),
-	E = worker:start(5, gsm3, 119, B, 2000).
+	timer:sleep(200),
+	D = worker:start(4, gsm3, 118, C, 2000),
+	timer:sleep(200),
+	E = worker:start(5, gsm3, 119, D, 2000).
 
 gsm3_restart() ->
 	A = worker:start(1, gsm3, 114, 2000),
@@ -47,9 +47,9 @@ gsm3_restart() ->
 	timer:sleep(100),
 	C = worker:start(3, gsm3, 116, B, 2000),
 	timer:sleep(100),
-	D = worker:start(4, gsm3, 118, B, 2000),
+	D = worker:start(4, gsm3, 118, C, 2000),
 	timer:sleep(100),
-	E = worker:start(5, gsm3, 119, B, 2000),
+	E = worker:start(5, gsm3, 119, D, 2000),
 	timer:sleep(100),
 	new_worker(6).
 

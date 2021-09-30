@@ -1,6 +1,8 @@
 -module(gsm1).
 -compile(export_all).
 
+% 没有问题，不需要改了
+
 start(Id) ->
     Self = self(),
     {ok, spawn_link(fun() -> init(Id, Self) end)}.
