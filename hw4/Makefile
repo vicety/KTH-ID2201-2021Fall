@@ -19,3 +19,6 @@ build: clear cp
 
 run:
 	@cd $(targetDir); erl -pa $(targetDir) -eval 'worker:$(FUN)()'
+
+run1: build
+	@cd $(targetDir); erl -pa $(targetDir) -eval 'worker:$(FUN)()'

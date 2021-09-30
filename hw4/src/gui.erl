@@ -27,7 +27,7 @@ loop(Window, Master)->
     receive
 	%% check if the window was closed by the user
 	#wx{event=#wxClose{}} ->
-	    wxWindow:destroy(Window),  
+	    wxWindow:destroy(Window),
 	    Master ! stop,
 	    ok;
 	{color, Color} ->

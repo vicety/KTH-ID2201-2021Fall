@@ -9,7 +9,7 @@
 % 没有观察到进程卡死、进程未启动等问题
 % 基于这个继续做gsm3
 
-start(Id) ->
+start(Id, _Rnd) ->
     Rnd = rand:uniform(1000),
     Self = self(),
     {ok, spawn_link(fun() -> init(Id, Rnd, Self) end)}.
@@ -18,7 +18,7 @@ init(Id, Rnd, Master) ->
     rand:seed(exsss, Rnd),
     leader(Id, Master, [], [Master]).
 
-start(Id, Grp) ->
+start(Id, Grp, _Rnd) ->
     Rnd = rand:uniform(1000),
     Self = self(),
     {ok, spawn_link(fun() -> init(Id, Rnd, Grp, Self) end)}.

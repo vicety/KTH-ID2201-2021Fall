@@ -3,11 +3,11 @@
 
 % 没有问题，不需要改了
 
-start(Id) ->
+start(Id, _Rnd) ->
     Self = self(),
     {ok, spawn_link(fun() -> init(Id, Self) end)}.
 
-start(Id, Grp) ->
+start(Id, Grp, _Rnd) ->
     Self = self(),
     {ok, spawn_link(fun() -> init(Id, Grp, Self) end)}.
 

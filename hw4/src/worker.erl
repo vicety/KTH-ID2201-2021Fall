@@ -1,11 +1,15 @@
 -module(worker).
 
--export([start/4, start/5, gsm1/0, gsm2/0, gsm3/0, gsm3_restart/0, gsm4/0]).
+% -export([start/4, start/5, gsm1/0, gsm2/0, gsm3/0, gsm3_restart/0, gsm4/0]).
+-compile(export_all).
 
 -define(change, 20).
 -define(color, {0,0,0}).
 
 % ======= gsm1 =========
+
+% no one dies
+
 gsm1() ->
 	A = worker:start(1, gsm1, 114, 2000),
 	timer:sleep(100),
@@ -14,7 +18,9 @@ gsm1() ->
 	C = worker:start(3, gsm1, 116, B, 2000).
 
 % ======= gsm2 =========
-% worker:gsm2().
+
+% process 1 very quick
+
 gsm2() ->
 	A = worker:start(1, gsm2, 114, 3000),
 	timer:sleep(100),
@@ -29,29 +35,41 @@ gsm2() ->
 
 % ======= gsm3 =========
 % worker:gsm3().
-gsm3() ->
-	A = worker:start(1, gsm3, 114, 2000),
-	timer:sleep(200),
-	B = worker:start(2, gsm3, 115, A, 2000),
-	timer:sleep(200),
-	C = worker:start(3, gsm3, 116, B, 2000),
-	timer:sleep(200),
-	D = worker:start(4, gsm3, 118, C, 2000),
-	timer:sleep(200),
-	E = worker:start(5, gsm3, 119, D, 2000).
+% {}
+% 
+% case 1 [113, 514, 1919, 810, 893]  timeout=2000 crashN=50
+% case 2 [12, 23, 34, 45, 56]  timeout=2000 crashN=50
 
-gsm3_restart() ->
-	A = worker:start(1, gsm3, 114, 2000),
-	timer:sleep(100),
-	B = worker:start(2, gsm3, 115, A, 2000),
-	timer:sleep(100),
-	C = worker:start(3, gsm3, 116, B, 2000),
-	timer:sleep(100),
-	D = worker:start(4, gsm3, 118, C, 2000),
-	timer:sleep(100),
-	E = worker:start(5, gsm3, 119, D, 2000),
-	timer:sleep(100),
-	new_worker(6).
+% 会不会存在join不成功，也就是这个view未完全发送：不存在，目前不存在发送的第一个节点即非正确节点的情况
+% 会不会存在join成功，但是后续的color同步不成功：基本不存在，同上，选举机制确保了只要有节点存活就一定能继续传递，唯一的例外是，join的时候挂到只剩自己，而自己的worker还没起来，因此没有running的worker可以回应这个state_request
+
+% 好了，基本稳定，基于这个开始做4，加一个滚动重启
+
+% 存在问题：消息完全没法出去，就挂了，怎么办
+
+gsm3() ->
+	A = worker:start(1, gsm3, 2, 2000),
+	timer:sleep(200),
+	B = worker:start(2, gsm3, 88, A, 2000),
+	timer:sleep(200),
+	C = worker:start(3, gsm3, 433, B, 2000),
+	timer:sleep(200),
+	D = worker:start(4, gsm3, 565888, C, 2000),
+	timer:sleep(200),
+	E = worker:start(5, gsm3, 4565888, D, 2000).
+
+% gsm3_restart() ->
+% 	A = worker:start(1, gsm3, 114, 2000),
+% 	timer:sleep(100),
+% 	B = worker:start(2, gsm3, 115, A, 2000),
+% 	timer:sleep(100),
+% 	C = worker:start(3, gsm3, 116, B, 2000),
+% 	timer:sleep(100),
+% 	D = worker:start(4, gsm3, 118, C, 2000),
+% 	timer:sleep(100),
+% 	E = worker:start(5, gsm3, 119, D, 2000),
+% 	timer:sleep(100),
+% 	new_worker(6).
 
 % ======= gsm4 =========
 gsm4() ->
@@ -81,7 +99,6 @@ new_worker_loop(Expect) ->
 			new_worker_loop(Expect+1)
 	end.
 
-			
 
 % Start a worker given:
 %  Id - a unique interger, only used for debugging
@@ -96,7 +113,7 @@ start(Id, Module, Rnd, Sleep) ->
 % for master
 init(Id, Module, Rnd, Sleep) ->
 	% group loop
-    {ok, Cast} = apply(Module, start, [Id]),
+    {ok, Cast} = apply(Module, start, [Id, Rnd]),
     Color = ?color,
 	% worker loop
     init_cont(Id, Rnd, Cast, Color, Sleep).
@@ -109,7 +126,7 @@ start(Id, Module, Rnd, Peer, Sleep) ->
 
 % for slave
 init(Id, Module, Rnd, Peer, Sleep) ->
-    {ok, Cast} = apply(Module, start, [Id, Peer]),
+    {ok, Cast} = apply(Module, start, [Id, Peer, Rnd]),
     {ok, Color} = join(Id, Cast),
     init_cont(Id, Rnd, Cast, Color, Sleep).
 
