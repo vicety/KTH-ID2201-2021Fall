@@ -2,12 +2,14 @@
 -compile(export_all).
 
 -define(timeout, 2000).
--define(crashN, 100).
+-define(crashN, 25).
 -define(sleep, 2000).
 
 % 目标：增加故障拉起新的
 
-% 25 100 crashN跑不出问题
+% 30 -> 13.3% 100 -> 4%
+% 建议跑一个30，跑一个100
+% lowest possible crashN is 25 now 16% crash every bcast
 
 
 start(Id, Rnd, Replica) ->
@@ -24,6 +26,7 @@ next_id(Next) ->
     end.
 
 init(Id, Rnd, Master, Replica) ->
+    % timer:sleep(500), % waiting gui up
     rand:seed(exsss, Rnd),
     io:format("spawned leader ~p ~p~n", [Id, self()]),
     leader(Id, Master, 1, [], [Master], Replica).
@@ -90,7 +93,7 @@ leader(Id, Master, N, Slaves, Group, Replica) ->
                         Group2 = lists:append(Group, [Wrk]),
                         bcast(Id, {view, N, [self()|Slaves2], Group2}, Slaves2),
                         Master ! {view, Group2},
-                        timer:sleep(200),
+                        % timer:sleep(200),
                         leader(Id, Master, N+1, Slaves2, Group2, Replica)
                 end
         end

@@ -2,14 +2,25 @@
 -compile(export_all).
 
 -define(timeout, 2000).
--define(crashN, 100).
+-define(crashN, 80).
+-define(noresponseN, 10).
 -define(sleep, 2000).
 -define(retry, 2).
 
-% 目标：增加故障拉起新的
+% 新增（相对于gsm4）：client fail场景
 
-% 25 100 crashN跑不出问题
+% nocrashN, noresponseN=10 无问题 4/10^2 = 0.04 node will fail in every bcast
+% nocrashN, noresponseN=5 有时小于5个，但总能恢复
+% nocrashN, noresponseN=6 还可以
+% crashN=80, noresposeN=10 无问题，0.04 slave fail every bcast, 0.05 leader fail every bcast, 0.09 node fail every bcast
 
+
+% 假设访问不通等于挂掉，不会后来又恢复
+% 那么可以bcast(发消息) + bcast(新view，可丢失) + 本地更新view，等待循环拉起
+% 下面说明为什么第二个bcast可丢失
+% 因为其他进程可以发现，如果是次leader挂掉，其他进程可以monitor发现；如果是其他进程挂掉，下次请求时也能发现
+
+% 其实可以完全不处理失败，但是这样迟早leader以外全部节点都要挂掉，所以偶尔也要处理
 
 start(Id, Rnd, Replica) ->
     Self = self(),
@@ -48,6 +59,7 @@ init_slave(Id, Rnd, Grp, Master, Replica) ->
     receive
         % slaves(first is leader), masters 
         {view, N, [Leader|Slaves], Group} ->
+            % Leader ! ack,
             io:format("slave ~p recv first view ~p monitoring ~p~n", [Id, {view, N, [Leader|Slaves], Group}, Leader]),
             erlang:monitor(process, Leader),
             Master ! {view, Group},
@@ -62,13 +74,20 @@ init_slave(Id, Rnd, Grp, Master, Replica) ->
 leader(Id, Master, N, Slaves, Group, Replica) ->
     receive
         {mcast, Msg} ->
-            % io:format("Id=[~p] leader send msg:[~p]~n", [Id, Msg]),
-            gsm4:bcast(Id, {msg, N, Msg}, Slaves),
-            Master ! Msg,
-            leader(Id, Master, N+1, Slaves, Group, Replica);
+            case bcast(Id, {msg, N, Msg}, Slaves) of
+                ok ->
+                    Master ! Msg,
+                    leader(Id, Master, N+1, Slaves, Group, Replica);
+                {error, FailedNodes} ->
+                    io:format("Id ~p mcast partial failure [~p]~n", [Id, FailedNodes]),
+                    Master ! Msg,
+                    {Slaves1, Group1} = remaining_nodes(FailedNodes, Slaves, Group),
+                    bcast(Id, {view, N+1, [self()|Slaves1], Group1}, Slaves1), % no need to handle failure here
+                    leader(Id, Master, N+2, Slaves1, Group1, Replica)
+            end;
         stop ->
             ok
-    % 如果优先处理加入事件，那么会出现只有1启动了worker，也就是说只有单点有历史状态（尽管这个状态我们知道是0），在启动2345的过程中，会有多次bcast，一旦1fail，状态就丢失了，失败风险很高
+    % 如果优先处理加入事件（而不是像这样伪轮询），那么会出现只有1启动了worker，也就是说只有单点有历史状态（尽管这个状态我们知道是0），在启动2345的过程中，会有多次bcast，一旦1fail，状态就丢失了，失败风险很高
     after 200 ->
         case length(Group) of
             Replica ->
@@ -80,7 +99,6 @@ leader(Id, Master, N, Slaves, Group, Replica) ->
                     {next_id, NextID} ->
                         ok
                 end,
-                % worker_start_slave(NextID, rand:uniform(10000), Master, Replica), % 给master发也是传给它的cast的，有可能master还没起并且
                 worker_start_slave(NextID, rand:uniform(10000), self(), Replica),
                 io:format("Leader ~p waiting join msg from ~p~n", [Id, NextID]),
                 receive
@@ -89,10 +107,17 @@ leader(Id, Master, N, Slaves, Group, Replica) ->
                         io:format("Id [~p] add new Peer ~p Wrk ~p~n", [Id, Peer, Wrk]),
                         Slaves2 = lists:append(Slaves, [Peer]),
                         Group2 = lists:append(Group, [Wrk]),
-                        gsm4:bcast(Id, {view, N, [self()|Slaves2], Group2}, Slaves2),
-                        Master ! {view, Group2},
-                        timer:sleep(200),
-                        leader(Id, Master, N+1, Slaves2, Group2, Replica)
+                        case bcast(Id, {view, N, [self()|Slaves2], Group2}, Slaves2) of
+                            ok ->
+                                Master ! {view, Group2},
+                                leader(Id, Master, N+1, Slaves2, Group2, Replica);
+                            {error, FailedNodes} ->
+                                io:format("Id ~p join new view bcast partial failure [~p]~n", [Id, FailedNodes]),
+                                {Slaves3, Group3} = remaining_nodes(FailedNodes, Slaves2, Group2),
+                                Master ! {view, Group3},
+                                bcast(Id, {view, N+1, [self()|Slaves3], Group3}, Slaves3), % no need to handle failure here
+                                leader(Id, Master, N+2, Slaves3, Group3, Replica)
+                        end 
                 end
         end
     end.
@@ -105,7 +130,6 @@ slave(Id, Master, Leader, N, Last, Slaves, Group, Replica) ->
             io:format("slave ~p detect ~p down~n", [Id, Leader]),
             election(Id, Master, N, Last, Slaves, Group, Replica);
         {mcast, Msg} ->
-            % io:format("leader ~p~n", [Leader]),
             Leader ! {mcast, Msg},
             slave(Id, Master, Leader, N, Last, Slaves, Group, Replica);
         {join, Wrk, Peer} ->
@@ -113,11 +137,10 @@ slave(Id, Master, Leader, N, Last, Slaves, Group, Replica) ->
             Leader ! {join, Wrk, Peer},
             slave(Id, Master, Leader, N, Last, Slaves, Group, Replica);
         {msg, I, Msg} when I < N ->
-            io:format("Id [~p] discard seen message ~p~n", [Id, Msg]),
+            io:format("Id [~p] discard seen message N=[~p] ~p~n", [Id, I, Msg]),
             slave(Id, Master, Leader, N, Last, Slaves, Group, Replica); 
         {msg, N, Msg} ->
             io:format("Id [~p] recv msg [~p]~n", [Id, {msg, N, Msg}]),
-            % io:format("Id=[~p] recv msg:[~p]~n", [Id, Msg]),，
             Master ! Msg,
             slave(Id, Master, Leader, N+1, {msg, N, Msg}, Slaves, Group, Replica);
         {view, I, [DeclaredLeader|Slaves2], Group2} when I < N ->
@@ -134,13 +157,13 @@ slave(Id, Master, Leader, N, Last, Slaves, Group, Replica) ->
                     slave(Id, Master, Leader, N+1, {view, N, [DeclaredLeader|Slaves2], Group2}, Slaves, Group, Replica)
             end;
         stop ->
+            io:format("killing ~p~n", [Id]),
+            Master ! stop,
             ok;
         _Else ->
             io:format("HALT slave [~p]: expected N ~p, unexpected message ~p~n", [Id, N, _Else])
     end.
 
-% delete current leader
-% 可能不同process进入这里的时间不同，草了
 election(Id, Master, N, Last, Slaves, [LastLeader|Group], Replica) ->
     Self = self(),
     case Slaves of
@@ -158,16 +181,34 @@ election(Id, Master, N, Last, Slaves, [LastLeader|Group], Replica) ->
                 ExpectedN -> ok;
                 _Else -> io:format("Error resend N not as expected~n")
             end,
-            gsm4:bcast(Id, Last, Rest), % 自己期待N，无论如何这个消息都应该是N-1的，此时确保所有client期待N
-            io:format("Id [~p] bcasting new view after last leader [~p] crash~n", [Id, LastLeader]),
-            gsm4:bcast(Id, {view, N, Slaves, Group}, Rest),
-            Master ! {view, Group},
-            leader(Id, Master, N+1, Rest, Group, Replica);
+            %  {Slaves3, Group3} = remaining_nodes(FailedNodes, Slaves2, Group2),
+            case bcast(Id, Last, Rest) of % 自己期待N，无论如何这个消息都应该是N-1的，此时确保所有client期待N
+                ok ->
+                    io:format("Id [~p] bcasting new view after last leader [~p] crash~n", [Id, LastLeader]),
+                    bcast(Id, {view, N, Slaves, Group}, Rest),
+                    Master ! {view, Group},
+                    leader(Id, Master, N+1, Rest, Group, Replica);
+                {error, FailedNodes} ->
+                    io:format("Id ~p elction bcast last msg partial failure [~p]~n", [Id, FailedNodes]),
+                    {Slaves1, Group1} = remaining_nodes(FailedNodes, Rest, Group),
+                    bcast(Id, {view, N, Slaves1, Group1}, Rest),
+                    Master ! {view, Group1},
+                    leader(Id, Master, N+1, Slaves1, Group1, Replica)
+            end;
         [Leader|Rest] ->
             io:format("slave ~p monitored Last Leader ~p fail, monitoring new leader ~p~n", [Id, LastLeader, Leader]),
             erlang:monitor(process, Leader),
             slave(Id, Master, Leader, N, Last, Rest, Group, Replica) % leader挂了，不影响其他人继续期待N
     end.
+
+remaining_nodes(FailedNodes, Slaves, Group) ->
+    Zipped = lists:zip([self()|Slaves], Group),
+    Zipped1 = lists:foldl(fun(Ele, Acc) ->
+        lists:keydelete(Ele, 1, Acc)
+    end, Zipped, FailedNodes),
+    Self = self(),
+    {[Self|Slaves1], Group1} = lists:unzip(Zipped1),
+    {Slaves1, Group1}.
 
 % return [remainingSlaves, remainingGroupWithoutSelf]
 recover(Id, Slaves, Group, DownSlaves) ->
@@ -228,15 +269,17 @@ reliable_send(Id, Dst, Msg) ->
 reliable_send(Id, Dst, _Msg, Resend) when Resend == ?retry ->
     Dst ! stop,
     io:format("[~p] retried maximum times~n", [Id]),
+    timer:sleep(50), % make sure stop is delivered
     error;
 
 % mimic msg lost with 1 resend, mimic client down with maximum(?retry) resend
 reliable_send(Id, Dst, Msg, Resend) ->
-    Dst ! Msg,
-    receive
-        ack ->
+    % Dst ! Msg,
+    case rand:uniform(?noresponseN) of
+        ?noresponseN ->
+            io:format("Id ~p msg [~p] sent to [~p] fail, retry ~p~n", [Id, Msg, Dst, Resend]),
+            reliable_send(Id, Dst, Msg, Resend+1);
+        _Else ->
+            Dst ! Msg,
             ok
-    after 1000->
-        io:format("[~p] msg [~p] sent to [~p] fail, retry ~p~n", [Id, Msg, Dst, Resend]),
-        reliable_send(Id, Dst, Msg, Resend+1)
     end.
