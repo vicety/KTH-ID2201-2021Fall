@@ -2,12 +2,12 @@
 -compile(export_all).
 
 -define(timeout, 2000).
--define(crashN, 80).
--define(noresponseN, 10).
+-define(crashN, 80000).
+-define(noresponseN, 10000).
 -define(sleep, 2000).
 -define(retry, 2).
 
-% 新增（相对于gsm4）：client fail场景
+% 新增（相对于gsm4）：client fail场景、支持扩容（不支持缩容）
 
 % nocrashN, noresponseN=10 无问题 4/10^2 = 0.04 node will fail in every bcast
 % nocrashN, noresponseN=5 有时小于5个，但总能恢复
@@ -85,6 +85,16 @@ leader(Id, Master, N, Slaves, Group, Replica) ->
                     bcast(Id, {view, N+1, [self()|Slaves1], Group1}, Slaves1), % no need to handle failure here
                     leader(Id, Master, N+2, Slaves1, Group1, Replica)
             end;
+        {replica, NewReplica} ->
+            case bcast(Id, {replica, N, NewReplica}, Slaves) of
+                ok ->
+                    leader(Id, Master, N+1, Slaves, Group, NewReplica);
+                {error, FailedNodes} ->
+                    io:format("Id ~p replica partial failure [~p]~n", [Id, FailedNodes]),
+                    {Slaves1, Group1} = remaining_nodes(FailedNodes, Slaves, Group),
+                    bcast(Id, {view, N+1, [self()|Slaves1], Group1}, Slaves1), % no need to handle failure here
+                    leader(Id, Master, N+2, Slaves1, Group1, NewReplica)
+            end;
         stop ->
             ok
     % 如果优先处理加入事件（而不是像这样伪轮询），那么会出现只有1启动了worker，也就是说只有单点有历史状态（尽管这个状态我们知道是0），在启动2345的过程中，会有多次bcast，一旦1fail，状态就丢失了，失败风险很高
@@ -156,6 +166,10 @@ slave(Id, Master, Leader, N, Last, Slaves, Group, Replica) ->
                     io:format("Id [~p] Different Leader [~p] From Local [~p], suspect to be stale message form new leader~n", [Id, DeclaredLeader, Leader]), % 但是stale的view可能包含新成员，这里先让它fail，观测到新成员无法从leader通信是正常现象
                     slave(Id, Master, Leader, N+1, {view, N, [DeclaredLeader|Slaves2], Group2}, Slaves, Group, Replica)
             end;
+        {replica, I, _NewReplica} when I < N ->
+            slave(Id, Master, Leader, N, Last, Slaves, Group, Replica); 
+        {replica, N, NewReplica} ->
+            slave(Id, Master, Leader, N+1, Last, Slaves, Group, NewReplica); 
         stop ->
             io:format("killing ~p~n", [Id]),
             Master ! stop,

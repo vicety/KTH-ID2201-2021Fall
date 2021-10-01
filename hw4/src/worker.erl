@@ -55,19 +55,20 @@ gsm4() ->
 	spawn(fun() ->
 		% id, rnd, replica
 		{Id, Rnd, Replica, Sleep} = {1, 123, 5, 2000},
- 		{ok, Cast} = apply(gsm4, start, [Id, Rnd, Replica]),
+ 		{ok, Cast} = gsm4:start(Id, Rnd, Replica),
 		Color = ?color,
-		% worker loop
 		init_cont(Id, Rnd, Cast, Color, Sleep)
 	end).
 
+% A = worker:gsm5().
+% A ! {replica, 7}.
+% A ! {replica, 10}. % 到10就会有问题，先不管了，不是主要功能
 gsm5() ->
 	spawn(fun() ->
 		% id, rnd, replica
 		{Id, Rnd, Replica, Sleep} = {1, 123, 5, 2000},
- 		{ok, Cast} = apply(gsm5, start, [Id, Rnd, Replica]),
+ 		{ok, Cast} = gsm5:start(Id, Rnd, Replica),
 		Color = ?color,
-		% worker loop
 		init_cont(Id, Rnd, Cast, Color, Sleep)
 	end).
 
@@ -186,6 +187,10 @@ worker(Id, Cast, Color, Gui, Sleep) ->
 	%% That's all folks
 	stop ->
 	    ok;
+
+	{replica, N} ->
+		Cast !  {replica, N},	   
+		worker(Id, Cast, Color, Gui, Sleep);
 
 	%% Someone from above wants us to multicast a message.
 	{send, Msg} ->
