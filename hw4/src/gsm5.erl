@@ -2,12 +2,17 @@
 -compile(export_all).
 
 -define(timeout, 2000).
--define(crashN, 80000).
--define(noresponseN, 10000).
+-define(crashN, 80).
+-define(noresponseN, 10).
 -define(sleep, 2000).
 -define(retry, 2).
 
 % 新增（相对于gsm4）：client fail场景、支持扩容（不支持缩容）
+
+% TODO: 虽然没时间做了，但是还是记录下有哪些地方可以改善
+%  1. node到leader的单点通信失败情况，如果仍然使用连不上则终止leader的方式，那么可以不改存量逻辑。一种场景是leader挂掉，接下来的leader也挂掉，此时需要第三个leader通过timeout判断第二个leader未能检测到第一个leader挂掉，
+%   判断此节点出问题，然后声称自己是leader，声称leader 2挂掉，这里不考虑2声明为leader的消息过了很久才到，这种情况应该直接丢弃就可以，没测
+%  2. 扩容还不够稳定、不支持缩容
 
 % nocrashN, noresponseN=10 无问题 4/10^2 = 0.04 node will fail in every bcast
 % nocrashN, noresponseN=5 有时小于5个，但总能恢复
