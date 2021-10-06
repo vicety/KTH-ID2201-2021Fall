@@ -2,8 +2,8 @@
 -compile(export_all).
 
 -define(timeout, 2000).
--define(crashN, 80).
--define(noresponseN, 10).
+-define(crashN, 100).
+-define(noresponseN, 20).
 -define(sleep, 2000).
 -define(retry, 2).
 
@@ -286,7 +286,8 @@ reliable_send(Id, Dst, Msg) ->
 
 % involve chance that a resend is not ok, then declare this node down, update view
 reliable_send(Id, Dst, _Msg, Resend) when Resend == ?retry ->
-    Dst ! stop,
+    % TODO: 应该只会和leader通信，slave间不通信，不一定要终止slave，直接在leader中排除它就好了，并且收到的消息需要记录来自哪里，在很长一段时间内维护这个挂掉的dst，回复他已经不在这个组里了，这样不会出现dst自己是自己leader的情况
+    Dst ! stop, 
     io:format("[~p] retried maximum times~n", [Id]),
     timer:sleep(50), % make sure stop is delivered
     error;

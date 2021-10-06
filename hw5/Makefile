@@ -21,4 +21,4 @@ run:
 	@cd $(targetDir); erl -pa $(targetDir) -eval 'worker:$(FUN)()'
 
 run1: build
-	@cd $(targetDir); erl -pa $(targetDir) -eval 'worker:$(FUN)()'
+	@cd $(targetDir); erl -pa $(targetDir) -eval 'node1:test()'

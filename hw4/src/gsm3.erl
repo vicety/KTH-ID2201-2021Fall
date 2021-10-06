@@ -2,7 +2,7 @@
 -compile(export_all).
 
 -define(timeout, 2000).
--define(crashN, 50).
+-define(crashN, 40).
 
 % 增加了发送后随机退出，由于可能只发给部分client，会导致最终不同步
 % 能够观察到，没有问题
