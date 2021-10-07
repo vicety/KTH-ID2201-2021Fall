@@ -108,7 +108,7 @@ start(Id, Peer) ->
 init(Id, Peer) ->
     {ok, Successor} = connect(Id, Peer),
     schedule_stabilize(), % TODO：有必要立即call一次stabilize？
-    % schedule_store_validation(),
+    schedule_store_validation(),
     node(Id, nil, Successor, store:create()).
 
 % return succ, set succ as self if is first node
@@ -314,13 +314,13 @@ notify({Nkey, Npid}, Id, Predecessor, Store) ->
         nil ->
             % io:format("Nkey ~p, Id ~p, size: ~p~n", [Nkey, Id, store:size(Store)]),
             Store1 = handover(Id, Store, Nkey, Npid, Id),
-            timer:sleep(200),
+            timer:sleep(100),
             {{Nkey, Npid}, Store1};
         {Pkey, _} ->
             case key:between(Nkey, Pkey, Id) of
                 true ->
                     Store1 = handover(Id, Store, Nkey, Npid, Id),
-                    timer:sleep(200),
+                    timer:sleep(100),
                     % Store1 = handover(Pkey, Store, Nkey, Npid, Id), % 都是一样的
                     {{Nkey, Npid}, Store1};
                 false ->

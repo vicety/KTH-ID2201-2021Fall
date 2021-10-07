@@ -155,7 +155,7 @@ notify({Nkey, Npid}, Id, Predecessor, Store) ->
             % io:format("Nkey ~p, Id ~p, size: ~p~n", [Nkey, Id, store:size(Store)]),
             case handover(Id, Store, Nkey, Npid, Id) of
                 {ok, Store1} ->
-                    timer:sleep(100),
+                    % timer:sleep(100),
                     {{Nkey, Npid}, Store1};
                 {error, timeout} ->
                     {error, timeout}
@@ -167,7 +167,7 @@ notify({Nkey, Npid}, Id, Predecessor, Store) ->
                 true ->
                     case handover(Id, Store, Nkey, Npid, Id) of
                         {ok, Store1} ->
-                            timer:sleep(100),
+                            % timer:sleep(100),
                             {{Nkey, Npid}, Store1};
                         {error, timeout} ->
                             {error, timeout}
