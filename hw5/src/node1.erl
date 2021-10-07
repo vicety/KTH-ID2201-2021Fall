@@ -9,15 +9,10 @@
 % node1:visualize(A).
 test() ->
     Start = start(key:generate()),
-    timer:sleep(2000),
     start(key:generate(), Start),
-    timer:sleep(2000),
     start(key:generate(), Start),
-    timer:sleep(2000),
     start(key:generate(), Start),
-    timer:sleep(2000),
     start(key:generate(), Start),
-    timer:sleep(2000),
     start(key:generate(), Start).
 
 
@@ -62,7 +57,7 @@ node(Id, Predecessor, Successor) ->
             Peer ! {Qref, Id},
             node(Id, Predecessor, Successor);
         % new node inform us its existance
-        % 只看见了pred可能会notice我们，此节点认为是我们的pred，尽量维护前向的正确性
+        % 只看到pred notice我们时调用，此节点认为是我们的pred，尽量维护前向的正确性
         {notify, New} ->
             Pred = notify(New, Id, Predecessor),
             node(Id, Pred, Successor);

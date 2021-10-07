@@ -303,3 +303,27 @@ reliable_send(Id, Dst, Msg, Resend) ->
             Dst ! Msg,
             ok
     end.
+
+
+% % 达到最大重试次数
+% reliable_send(Id, Dst, _Msg, Resend) when Resend == ?retry ->
+%     io:format("[~p] retried maximum times~n", [Id]),
+%     error;
+
+% % mimic msg lost with 1 resend, mimic client down with maximum(?retry) resend
+% reliable_send(Id, Dst, Msg, Resend) ->
+%     Dst ! Msg,
+%     receive
+%         ack ->
+%             ok
+%     after timeout ->
+% reliable_send(Id, Dst, Msg, Resend+1);
+
+%     case rand:uniform(?noresponseN) of
+%         ?noresponseN ->
+%             % 重发
+            
+%         _Else ->
+%             Dst ! Msg,
+%             ok
+%     end.
