@@ -8,16 +8,38 @@ node2() ->
     rand:seed(exsss, 114),
 
     First = start(node2),
-    start(node2, 31, First),
+    start(node2, 63, First),
     % timer:sleep(1000),
     % Keys = keys(10000),
-    Keys = keys(100000),
+    Keys = keys(200000),
     spawn(fun() -> Sets = sets:from_list(Keys), io:format("~p unique keys~n", [sets:size(Sets)]) end),
     % Sets = sets:from_list(Keys),
     % io:format("~p unique keys~n", [sets:size(Sets)]),
 
     add(Keys, First),
-    check(Keys, First).
+    
+    loop_check(Keys, First).
+
+node3() ->
+    rand:seed(exsss, 114),
+
+    First = start(node3),
+    start(node3, 63, First),
+    % timer:sleep(1000),
+    % Keys = keys(10000),
+    Keys = keys(200000),
+    spawn(fun() -> Sets = sets:from_list(Keys), io:format("~p unique keys~n", [sets:size(Sets)]) end),
+    % Sets = sets:from_list(Keys),
+    % io:format("~p unique keys~n", [sets:size(Sets)]),
+
+    add(Keys, First),
+    
+    loop_check(Keys, First).
+
+loop_check(Keys, First) ->
+    check(Keys, First),
+    timer:sleep(100),
+    loop_check(Keys, First).
 
 %% Starting up a set of nodes is made easier using this function.
 
@@ -131,7 +153,7 @@ check([Key|Keys], P, Failed, Timeout) ->
     end.
 
 
-    
+
 
 
 

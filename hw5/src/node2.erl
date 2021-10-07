@@ -18,6 +18,7 @@
 % 2. succ.pred: after A.succ is confirmed, A will notify A.succ that A is its pred, succ.pred is confirmed now, also data will be transfered. (if no concurrent node join/leave)
 %               mark-red the circle is not complete now
 % 3. pred.succ: pred periodically ask predecessor from pred.succ(which is not A), pred.succ tells pred that A, rather than pred is its predecessor, than prev.succ is set to A, this value is confirmed.
+%               mark-red 
 % 4. A.pred:    after step3, will receive a notify saying pred is A's pred
 
 % step 1 takes average N / 2 * Stabilize Interval
@@ -30,11 +31,11 @@
 
 start(Id) ->
     First = start(Id, nil),
-    % spawn(fun() -> timer:sleep(2000), timer:send_interval(3000, First, {visualize, First, 0, 0, ""}) end),
-    register(printer, spawn(fun() -> async_printer() end)),
-    register(counter, spawn(fun() -> counter(0, 0) end)),
+    spawn(fun() -> timer:sleep(100), timer:send_interval(1000, First, {visualize, First, 0, 0, ""}) end),
+    % register(printer, spawn(fun() -> async_printer() end)),
+    % register(counter, spawn(fun() -> counter(0, 0) end)),
     % register(addminus, spawn(fun() -> addminus(#{}) end)),
-    register(db, spawn(fun() -> db(#{}) end)),
+    % register(db, spawn(fun() -> db(#{}) end)),
     First.
 
 async_printer() ->
@@ -57,7 +58,7 @@ counter(Now, Inconsistent) ->
         inconsistent ->  
             counter(Now, Inconsistent+1)
     after 500 ->
-        io:format("get counter now ~p inconsistent ~p~n", [Now, Inconsistent]),
+        % io:format("get counter now ~p inconsistent ~p~n", [Now, Inconsistent]),
         counter(Now, Inconsistent)
     end.
 
@@ -107,7 +108,7 @@ start(Id, Peer) ->
 init(Id, Peer) ->
     {ok, Successor} = connect(Id, Peer),
     schedule_stabilize(), % TODO：有必要立即call一次stabilize？
-    schedule_store_validation(),
+    % schedule_store_validation(),
     node(Id, nil, Successor, store:create()).
 
 % return succ, set succ as self if is first node
@@ -139,8 +140,9 @@ node(Id, Predecessor, Successor, Store) ->
         {lookup, K, Qref, Client} ->
             lookup(K, Qref, Client, Id, Predecessor, Successor, Store),
             node(Id, Predecessor, Successor, Store);
-        {handover, Elements} ->
+        {handover, Elements, DataFrom, QRef} ->
             % addminus ! {add, store:size(Elements)},
+            % DataFrom ! {ack, QRef},
             Merged = store:merge(Store, Elements), % 可以解决问题，会慢很多，解决了更好的prev先来，无任何东西可split，handover后到，此时又没有交给更好的prev
             % maps:foreach(fun(K, _V) ->
             %     case store:lookup(K, Merged) of
@@ -157,9 +159,17 @@ node(Id, Predecessor, Successor, Store) ->
             %     {Pkey, Ppid} ->
             %         {Store1, Shares} = store:split(Id, Pkey, Store),
             %         % addminus ! {minus, store:size(Shares)},
+
+            %         ShareSz = maps:size(Shares),
+            %         case ShareSz of
+            %             0 -> ok;
+            %             _ -> io:format("works~n")
+            %         end,
+
+            %         io:format("shares: [~p]~n", [Shares]),
             %         Ppid ! {handover, Shares},
             %         maps:foreach(fun(K, _V) ->
-            %             db ! {add, K, {handover1, Pkey}} % move to Nkey
+            %             db ! {add1, K, {handover1, Pkey}} % move to Nkey
             %         end, Shares),
             %         node(Id, Predecessor, Successor, Store1)
             % end;
@@ -192,9 +202,10 @@ node(Id, Predecessor, Successor, Store) ->
         stabilize ->
             stabilize(Successor),
             node(Id, Predecessor, Successor, Store);
+        % 无论如何，总是要优先保证正确性的
         validate_store ->
-            validate_store(Id, Predecessor, Store),
-            node(Id, Predecessor, Successor, Store);
+            Store1 = validate_store(Id, Predecessor, Store),
+            node(Id, Predecessor, Successor, Store1);
         _Other ->
             io:format("Unexpected msg: ~p~n", [_Other])
     end.
@@ -212,7 +223,7 @@ add(K, V, Qref, Client, Id, {Pkey, _}, {_, Spid}, Store) ->
             %     10 -> timer:sleep(10);
             %     _ -> ok
             % end,s
-            db ! {add, K, {addTo, Id}},
+            % db ! {add, K, {addTo, Id}},
             Store1 = store:add(K, V, Store),
             Client ! {Qref, ok};
         false ->
@@ -221,16 +232,19 @@ add(K, V, Qref, Client, Id, {Pkey, _}, {_, Spid}, Store) ->
     end,
     Store1.
 
+% step3 to step4 predecessor is nil
+lookup(K, Qref, Client, _, nil, {_, Spid}, _) ->
+    Spid ! {lookup, K, Qref, Client}; % pass to next, rare chance will reach here
 lookup(K, Qref, Client, Id, {Pkey, _}, {_, Spid}, Store) ->
     case key:between(K, Pkey, Id) of
         true ->
             Tmp = store:lookup(K, Store),
-            Client ! {Qref, Tmp},
-            case Tmp of
-                false ->
-                    printer ! {K, Pkey, Id};
-                _ -> ok
-            end;
+            Client ! {Qref, Tmp};
+            % case Tmp of
+                % false ->
+                    % printer ! {K, Pkey, Id};
+                % _ -> ok
+            % end;
         false ->
             Spid ! {lookup, K, Qref, Client}
     end.
@@ -242,7 +256,8 @@ handle_visualize(Id, Starter, Seq, Acc, RingStr, {_Skey, Spid}, Store) ->
         _Else -> Seq1 = Seq
     end,
     case Seq1 of
-        2 -> io:format("Total ~p data, graph: ~p~n", [Acc, RingStr ++ integer_to_list(Id) ++ "(" ++ integer_to_list(store:size(Store)) ++ ")"]);
+        % 2 -> io:format("Total ~p data, graph: ~p~n", [Acc, RingStr ++ integer_to_list(Id) ++ "(" ++ integer_to_list(store:size(Store)) ++ ")"]);
+        2 -> io:format("Total ~p data~n", [Acc]);
         _ -> 
             Spid ! {visualize, Starter, Seq1, Acc + store:size(Store), RingStr ++ integer_to_list(Id) ++ "(" ++ integer_to_list(store:size(Store)) ++ ")" ++ " --> "}
     end.
@@ -291,19 +306,21 @@ schedule_stabilize() ->
     timer:send_interval(?Stabilize, self(), stabilize).
 
 schedule_store_validation() ->
-    timer:send_interval(2000, self(), validate_store).
+    timer:send_interval(500, self(), validate_store).
 
-% pred, id, pred_before  used to maintain right pred
+% [pred, id, pred_before]  used to maintain right pred
 notify({Nkey, Npid}, Id, Predecessor, Store) ->
     case Predecessor of
         nil ->
             % io:format("Nkey ~p, Id ~p, size: ~p~n", [Nkey, Id, store:size(Store)]),
             Store1 = handover(Id, Store, Nkey, Npid, Id),
+            timer:sleep(200),
             {{Nkey, Npid}, Store1};
         {Pkey, _} ->
             case key:between(Nkey, Pkey, Id) of
                 true ->
                     Store1 = handover(Id, Store, Nkey, Npid, Id),
+                    timer:sleep(200),
                     % Store1 = handover(Pkey, Store, Nkey, Npid, Id), % 都是一样的
                     {{Nkey, Npid}, Store1};
                 false ->
@@ -311,35 +328,65 @@ notify({Nkey, Npid}, Id, Predecessor, Store) ->
             end
     end.
 
+% move (Pkey, Nkey] to Nkey
 handover(Pkey, Store, Nkey, Npid, Id) ->
     % io:format("store: ~p~n", [Store]),
     {Store1, Shares} = store:split(Pkey, Nkey, Store),
-    maps:foreach(fun(K, _V) ->
-        db ! {add, K, {handover, Nkey}} % move to Nkey
-    end, Shares),
+    % maps:foreach(fun(K, _V) ->
+        % db ! {add, K, {handover, Nkey}} % move to Nkey
+    % end, Shares),
+
     % addminus ! {minus, store:size(Shares)},
     % ShareSz = store:size(Shares),
     % case ShareSz of
     %     0 -> ok;
-    %     _ -> io:format("split from (~p,~p] to (~p,~p], moving ~p/~p elements~n", [Pkey, Id, Pkey, Nkey, ShareSz, store:size(Store)])
+    %     1 -> io:format("[~p] moving element[~p] to [~p]~n", [Id, Shares, Nkey]);
+    %     2 -> io:format("[~p] moving element[~p] to [~p]~n", [Id, Shares, Nkey]);
+    %     3 -> io:format("[~p] moving element[~p] to [~p]~n", [Id, Shares, Nkey]);
+    %     _ -> ok
     % end,
-    Npid ! {handover, Shares},
+
+    QRef = make_ref(),
+    Npid ! {handover, Shares, self(), QRef},
+    % receive 
+        % {ack, QRef} ->
+            % ok
+    % end,
     Store1.
 
-
-validate_store(Id, Predecessor, Store) ->
+only_validate(Id, Predecessor, Store) ->
     case Predecessor of
         nil -> ok;
-        {Pkey, _} ->
-            maps:foreach(fun(K, _V) ->
-                case key:between(K, Pkey, Id) of
-                    true -> ok;
+        {Pkey1, _} ->
+            InconsistentCnt = maps:fold(fun(K, V, Acc) ->
+                case key:between(K, Pkey1, Id) of
+                    true -> Acc;
                     false -> 
-                        % printer ! {inconsistent, K, Pkey, Id}
-                        counter ! inconsistent
+                        Acc+1
                 end
-            end, Store)
+            end, 0, Store),
+            case InconsistentCnt of
+                0 -> ok;
+                _ -> io:format("Id[~p] inconsistent cnt ~p~n", [Id, InconsistentCnt])
+            end
     end.
+
+validate_store(Id, Predecessor, Store) ->
+    % only_validate(Id, Predecessor, Store),
+
+    case Predecessor of
+        nil -> Store1 = Store;
+        {Pkey, Ppid} -> 
+            Store1 = handover(Id, Store, Pkey, Ppid, Id)
+            % Moving = maps:size(Store) - maps:size(Store1),
+            % case Moving of
+            %     0 -> ok;
+            %     _ -> io:format("[~p] moving ~p elements to [~p]~n", [Id, Moving, Pkey])
+            % end
+    end,
+
+    
+    Store1.
 
 
 % ============== CASE 1 ====================
@@ -362,3 +409,83 @@ validate_store(Id, Predecessor, Store) ->
 % 1> 400000 lookup operation in 1820 ms
 % 1> 61413 lookups failed, 0 caused a timeout
 % 1> lookup done
+
+% =============== CASE 2 ===================
+% 64 nodes 100k keys
+
+% prove periodical store validation is useful
+% 100000 add operation in 2411 ms
+% 0 add failed, 0 caused a timeout
+% 100000 lookup operation in 862 ms
+% 141 lookups failed, 0 caused a timeout
+% mark-yellow after 3 sec
+% 100000 lookup operation in 837 ms
+% 0 lookups failed, 0 caused a timeout
+
+% =============== CASE 3 ===================
+% 64 nodes 200k keys, notice 3556853's inconsistent data moved many times till [939884]
+
+% 198035 unique keys
+% [3002713] moving element[#{2086000 => gurka}] to 2121782
+% Id[6105397] inconsistent cnt 25
+% [9044681] moving element[#{8839597 => gurka,8956830 => gurka}] to 9036172
+% [7922446] moving element[#{7090135 => gurka,7120263 => gurka}] to 7191119
+% [6105397] moving 25 elements to [5735497]
+% Id[8557287] inconsistent cnt 5
+% [8557287] moving 5 elements to [8473733]
+% Id[8473733] inconsistent cnt 2
+% Id[8134111] inconsistent cnt 3
+% Id[2659493] inconsistent cnt 1
+% Id[5735497] inconsistent cnt 19
+% [8473733] moving element[#{8347124 => gurka,8352299 => gurka}] to 8354368
+% [2659493] moving element[#{2153867 => gurka}] to 2243493
+% [8473733] moving 2 elements to [8354368]
+% [8134111] moving element[#{8021276 => gurka,8034658 => gurka,8058784 => gurka}] to 8071109
+% [5735497] moving 19 elements to [5366290]
+% [2659493] moving 1 elements to [2243493]
+% [8134111] moving 3 elements to [8071109]
+% Total 15823 data
+% Id[6012362] inconsistent cnt 1356
+% Id[5366290] inconsistent cnt 15
+% [5366290] moving 15 elements to [4776864]
+% [6012362] moving 1356 elements to [5956770]
+% Id[5717965] inconsistent cnt 2512
+% Id[4776864] inconsistent cnt 15
+% [3826118] moving element[#{3601229 => gurka,3601246 => gurka}] to 3601249
+% [4776864] moving 15 elements to [4630094]
+% [5717965] moving 2512 elements to [5687019]
+% Total 143041 data
+% Id[2273590] inconsistent cnt 110
+% Id[4630094] inconsistent cnt 7
+% Id[5687019] inconsistent cnt 743
+% [2273590] moving 110 elements to [2250665]
+% [4630094] moving 7 elements to [4161369]
+% [5687019] moving 743 elements to [5458605]
+% 200000 add operation in 2530 ms
+% 0 add failed, 0 caused a timeout
+% Id[4161369] inconsistent cnt 3
+% Id[1712617] inconsistent cnt 3581
+% [4161369] moving element[#{3871889 => gurka,3881744 => gurka,3930487 => gurka}] to 4011901
+% [4161369] moving 3 elements to [4011901]
+% [1712617] moving 3581 elements to [1280690]
+% Total 192990 data
+% Id[1280690] inconsistent cnt 2651
+% Id[4011901] inconsistent cnt 3
+% [4011901] moving element[#{3871889 => gurka,3881744 => gurka,3930487 => gurka}] to 3976636
+% [4011901] moving 3 elements to [3976636]
+% Id[255982] inconsistent cnt 1549
+% [255982] moving 1549 elements to [78237]
+% [1280690] moving 2651 elements to [1232764]
+% Id[3976636] inconsistent cnt 3
+% Id[78237] inconsistent cnt 691
+% [3976636] moving element[#{3871889 => gurka,3881744 => gurka,3930487 => gurka}] to 3973611
+% [3976636] moving 3 elements to [3973611]
+% [78237] moving 691 elements to [35584]
+% Total 198035 data
+% 200000 lookup operation in 2093 ms
+% 1579 lookups failed, 0 caused a timeout
+% Total 198035 data
+% Total 198035 data
+% 200000 lookup operation in 1788 ms
+% 0 lookups failed, 0 caused a timeout
+% Total 198035 data
