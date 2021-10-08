@@ -20,3 +20,6 @@ run1: build
 
 run2: build
 	@cd $(targetDir); erl -pa $(targetDir) -eval 'test:node4()'
+
+run3: build
+	@cd $(targetDir); erl -pa $(targetDir) -eval 'test:node5()'

@@ -4,6 +4,7 @@
 
 -define(Timeout, 1000).
 
+% TODO: 稳定后加入new node观察
 node(MODULE) ->
     rand:seed(exsss, 114),
 
@@ -43,15 +44,31 @@ node4() ->
     check(Remain, First),
     check(Split, First).
 
+node5() ->
+    rand:seed(exsss, 114),
 
-start(keys, node4, First, NodeKeys) ->
-    start(keys, node4, First, NodeKeys, []).
+    First = start(node5),
+    KeyTmp = keys(9),
+    NodeKeys = [{0, First}|start(keys, node5, First, KeyTmp)],
+    Keys = keys(100),
+    spawn(fun() -> Sets = sets:from_list(Keys), io:format("~p unique keys~n", [sets:size(Sets)]) end),
+    Answer = get_answer(NodeKeys, Keys),
+    io:format("keys ~p~n", [Answer]),    
+
+    timer:sleep(3000),
+    add(Keys, First),
+    loop_check(Keys, First).
+
+
+start(keys, MODULE, First, NodeKeys) ->
+    start(keys, MODULE, First, NodeKeys, []).
 
 start(keys, _Module, _P, [], Processes) ->
     Processes;
 start(keys, Module, P, Keys, Processes) ->
     [Key|Rest] = Keys,
     Pid = apply(Module, start, [Key, P]),
+    % timer:sleep(500),
     start(keys, Module, P, Rest, Processes ++ [{Key, Pid}]).
 
 get_answer(Processes, Keys) ->
@@ -146,7 +163,7 @@ add(Key, Value, P, Retry) ->
 	    ok;
     {Q, error} ->
         timer:sleep(300),
-        % io:format("retry~n"),
+        io:format("retry adding~n"),
         add(Key, Value, P, Retry+1)
 	after ?Timeout ->
 	    timeout
