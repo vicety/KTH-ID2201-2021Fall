@@ -16,10 +16,7 @@ build: clear cp
 	@echo "compile done"
 
 run1: build
-	@cd $(targetDir); erl -pa $(targetDir) -eval 'node1:test()'
+	@cd $(targetDir); erl -pa $(targetDir) -eval 'test:node($(MODULE))'
 
 run2: build
-	@cd $(targetDir); erl -pa $(targetDir) -eval 'test:node2()'
-
-run3: build
-	@cd $(targetDir); erl -pa $(targetDir) -eval 'test:node3()'
+	@cd $(targetDir); erl -pa $(targetDir) -eval 'test:node4()'

@@ -4,38 +4,99 @@
 
 -define(Timeout, 1000).
 
-node2() ->
+node(MODULE) ->
     rand:seed(exsss, 114),
 
-    First = start(node2),
-    start(node2, 63, First),
-    % timer:sleep(1000),
-    % Keys = keys(10000),
+    First = start(MODULE),
+    start(MODULE, 9, First),
     Keys = keys(400000),
     spawn(fun() -> Sets = sets:from_list(Keys), io:format("~p unique keys~n", [sets:size(Sets)]) end),
-    % Sets = sets:from_list(Keys),
-    % io:format("~p unique keys~n", [sets:size(Sets)]),
-
-    add(Keys, First),
     
+    timer:sleep(2000),
+    add(Keys, First),
     loop_check(Keys, First).
 
-node3() ->
+
+node4() ->
     rand:seed(exsss, 114),
 
-    First = start(node3),
-    start(node3, 31, First),
-    timer:sleep(3500),
-    % timer:sleep(1000),
-    % Keys = keys(10000),
-    Keys = keys(400000),
-    spawn(fun() -> Sets = sets:from_list(Keys), io:format("~p unique keys~n", [sets:size(Sets)]) end),
-    % Sets = sets:from_list(Keys),
-    % io:format("~p unique keys~n", [sets:size(Sets)]),
-
-    add(Keys, First),
+    First = start(node4),
+    KeyTmp = keys(9),
+    NodeKeys = [{0, First}|start(keys, node4, First, KeyTmp)],
+    Keys = keys(100),
+    Answer = get_answer(NodeKeys, Keys),
+    io:format("keys ~p~n", [Answer]),
     
-    loop_check(Keys, First).
+    timer:sleep(3000),
+    add(Keys, First),
+    timer:sleep(1000),
+    % loop_check(Keys, First),
+    check(Keys, First),
+
+    N = rand:uniform(length(NodeKeys)),
+    {StopNodeKey, StopNodePid} = lists:nth(N, NodeKeys),
+    io:format("stop key [~p]~n", [StopNodeKey]),
+    {Remain, Split} = split_answer(Answer, StopNodeKey),
+
+    StopNodePid ! stop,
+    timer:sleep(1000),
+    check(Remain, First),
+    check(Split, First).
+
+
+start(keys, node4, First, NodeKeys) ->
+    start(keys, node4, First, NodeKeys, []).
+
+start(keys, _Module, _P, [], Processes) ->
+    Processes;
+start(keys, Module, P, Keys, Processes) ->
+    [Key|Rest] = Keys,
+    Pid = apply(Module, start, [Key, P]),
+    start(keys, Module, P, Rest, Processes ++ [{Key, Pid}]).
+
+get_answer(Processes, Keys) ->
+    get_answer_srted(lists:sort(lists:map(fun(K) -> element(1, K) end, Processes)), lists:sort(Keys), #{}).
+
+get_answer_srted(Nodes, [], Acc) ->
+    Acc;
+get_answer_srted(Nodes, Ks, Acc) ->
+    [K|Rest] = Ks,
+    Pos = find_pos(Nodes, K),
+    Node = lists:nth(Pos, Nodes),
+    case maps:is_key(Node, Acc) of
+        false ->
+            Acc1 = Acc#{Node => []};
+        true -> Acc1 = Acc
+    end,
+    #{Node := Tmp} = Acc1,
+    get_answer_srted(Nodes, Rest, Acc1#{Node => Tmp ++ [K]}).
+
+% {Remaining Keys, Splited Keys}
+split_answer(Answer, NodeK) ->
+    maps:fold(fun(K, V, {Remain, Split}) ->
+        case K of
+            NodeK -> 
+                Remain1 = Remain,
+                Split1 = Split ++ V;
+            _ -> 
+                Remain1 = Remain ++ V,
+                Split1 = Split
+        end,
+        {Remain1, Split1}
+    end, {[], []}, Answer).
+
+find_pos(Nodes, K) ->
+    Seq = lists:seq(1, length(Nodes)),
+    Nodes1 = [lists:nth(length(Nodes), Nodes)|Nodes],
+    Acc = lists:foldl(fun(I, Acc) ->
+        case key:between(K, lists:nth(I, Nodes1), lists:nth(I+1, Nodes1)) of
+            true -> Acc1 = Acc ++ [I];
+            false -> Acc1 = Acc
+        end,
+        Acc1
+    end, [], Seq),
+    lists:nth(1, Acc).
+
 
 loop_check(Keys, First) ->
     check(Keys, First),
