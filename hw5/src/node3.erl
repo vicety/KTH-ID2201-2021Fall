@@ -5,6 +5,7 @@
 -define(Stabilize, 100).
 -define(Timeout, 5000).
 
+
 start(Id) ->
     start(Id, nil).
 
@@ -191,3 +192,10 @@ handover(Pkey, Store, Nkey, Npid, Id) ->
             end
     end.
 
+validate_store(Id, Predecessor, Store) ->
+    case Predecessor of
+        nil -> Store1 = Store;
+        {Pkey, Ppid} -> 
+            Store1 = handover(Id, Store, Pkey, Ppid, Id)
+    end,
+    Store1.

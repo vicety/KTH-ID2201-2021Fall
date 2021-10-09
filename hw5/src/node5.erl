@@ -3,12 +3,19 @@
 
 % simplify node2
 -define(Stabilize, 100).
+-define(VisualizeInterval, 500).
 -define(Timeout, 5000).
 -define(ReplicateTimeout, 80).
+-define(StoreValidation, 200).
+
+% 0(Store:5) (Replica:5) --> 35584(Store:1) (Replica:5) --> 2121782(Store:30) (Replica:1) --> 4161369(Store:18) (Replica:30) 
+%                        --> 5458605(Store:11) (Replica:18) --> 6908360(Store:12) (Replica:11) --> 7923512(Store:10) (Replica:12) 
+%                        --> 8557287(Store:8) (Replica:10) --> 8645987(Store:0) (Replica:8) --> 9253054(Store:5) (Replica:0) 
+%                        --> 0(Store:5) (Replica:5)
 
 start(Id) ->
     First = start(Id, nil),
-    spawn(fun() -> timer:sleep(100), timer:send_interval(1000, First, {visualize, First, 0, 0, ""}) end),
+    spawn(fun() -> timer:sleep(100), timer:send_interval(?VisualizeInterval, First, {visualize, First, 0, 0, ""}) end),
     First.
 
 start(Id, Peer) ->
@@ -19,7 +26,12 @@ init(Id, Peer) ->
     {ok, Successor} = connect(Id, Peer),
     {Skey, _, Spid} = Successor,
     schedule_stabilize(), % TODO：有必要立即call一次stabilize？
+    % schedule_store_validation(),
     node(Id, nil, Successor, store:create(), {Skey, Spid}, store:create()).
+
+schedule_store_validation() ->
+    timer:send_interval(?StoreValidation, self(), validate_store).
+    
 
 % return succ, set succ as self if is first node
 connect(Id, nil) ->
@@ -40,7 +52,7 @@ visualize(StartNode) ->
 % Seen #{K => Seq}
 node(Id, Predecessor, Successor, Store, Next, Replica) ->
     receive
-        {replicate, Qref, K, V} ->
+        {replicate, _Qref, K, V} ->
             node(Id, Predecessor, Successor, Store, Next, store:add(K, V, Replica));
         {add, K, V, Qref, Client} ->
             case add(K, V, Qref, Client, Id, Predecessor, Successor, Store) of
@@ -51,8 +63,8 @@ node(Id, Predecessor, Successor, Store, Next, Replica) ->
                 {true, Store} ->
                     receive
                         {'DOWN', Ref, process, _, _} ->
-                            {Pred, Succ, Nxt} = down(Ref, Predecessor, Successor, Next, Store, Replica, Id),
-                            node(Id, Pred, Succ, Store, Nxt, Replica)
+                            {Pred, Succ, Nxt, Store1, Replica1} = down(Ref, Predecessor, Successor, Next, Store, Replica, Id),
+                            node(Id, Pred, Succ, Store1, Nxt, Replica1)
                     end
             end;    
         {lookup, K, Qref, Client} ->
@@ -60,7 +72,8 @@ node(Id, Predecessor, Successor, Store, Next, Replica) ->
             node(Id, Predecessor, Successor, Store, Next, Replica);
         {handover, Qref, Elements, _FromKey, FromPid} ->
             FromPid ! {ack, Qref},
-            Merged = store:merge(Store, Elements), 
+            % Merged = store:merge(Store, Elements), 
+            Merged = merge(Store, Elements, Successor),
             node(Id, Predecessor, Successor, Merged, Next, Replica);
         % newly added peer need to know our key
         {key, Qref, Peer} ->
@@ -83,7 +96,7 @@ node(Id, Predecessor, Successor, Store, Next, Replica) ->
         %  need to know our pred
         {request, Peer} ->
             % io:format("[~p] request Next ~p~n", [Id, Next]),
-            request(Peer, Predecessor, Next),
+            request(Peer, Predecessor, Successor),
             node(Id, Predecessor, Successor, Store, Next, Replica);
         % our succ inform us about its pred
         {status, Pred, Nx} ->
@@ -101,15 +114,31 @@ node(Id, Predecessor, Successor, Store, Next, Replica) ->
         {'DOWN', Ref, process, _, _} ->
             {Pred, Succ, Nxt, Store1, Replica1} = down(Ref, Predecessor, Successor, Next, Store, Replica, Id),
             node(Id, Pred, Succ, Store1, Nxt, Replica1);
+        {replicate_batch, Qref, Data, FromPid} ->
+            Replica1 = store:merge(Replica, Data),
+            io:format("[~p succ.succ] recv replica_batch, merging [~p] data, replica has now [~p] data~n", [Id, store:size(Data), store:size(Replica1)]),
+            FromPid ! Qref,
+            node(Id, Predecessor, Successor, Store, Next, Replica1);
         {visualize, Starter, Seq, Acc, RingStr}  ->
-            handle_visualize(Id, Starter, Seq, Acc, RingStr, Successor, Store),
+            handle_visualize(Id, Starter, Seq, Acc, RingStr, Successor, Store, Replica),
             % handle_visualize(Id, Starter, Seq, Acc, RingStr, Predecessor, Store),
             node(Id, Predecessor, Successor, Store, Next, Replica);
+        validate_store ->
+            {Store1, Replica1} = validate_store(Id, Predecessor, Store),
+            node(Id, Predecessor, Successor, Store1, Replica1, Id);
         stop ->
             io:format("[~p]: stopping...~n", [Id])
         % _Other ->
             % io:format("Unexpected msg: ~p~n", [_Other])
     end.
+
+merge(Store, Elements, {_Skey, _, Spid}) ->
+    Qref = make_ref(),
+    Spid ! {replicate_batch, Qref, Elements, self()},
+    receive
+        Qref -> ok
+    end,
+    store:merge(Store, Elements).
 
 % TODO: 这里由于只需要一个备份，不存在只进行了部分备份的问题
 add(_, _, Qref, Client, _, nil, {_, Spid}, _) ->
@@ -149,14 +178,11 @@ lookup(K, Qref, Client, Id, {Pkey, _, _}, {_, _, Spid}, Store) ->
             Spid ! {lookup, K, Qref, Client}
     end.
 
-request(Peer, Predecessor, Next) ->
-    case Next of
-        nil -> Nx = nil;
-        {Nxkey, Nxpid} -> Nx = {Nxkey, Nxpid}
-    end,
+% Succ should always be not nil 
+request(Peer, Predecessor, {Skey, _, Spid}) ->
     case Predecessor of
-        nil -> Peer ! {status, nil, Nx};
-        {Pkey, _, Ppid} -> Peer ! {status, {Pkey, Ppid}, Nx}
+        nil -> Peer ! {status, nil, {Skey, Spid}};
+        {Pkey, _, Ppid} -> Peer ! {status, {Pkey, Ppid}, {Skey, Spid}}
     end.
 
 stabilize({_, _, Spid}) ->
@@ -239,58 +265,62 @@ handover(Pkey, Store, Nkey, Npid, Id) ->
     end.
 
 down(Ref, {Pkey, Ref, _}, Successor, Next, Store, Replica, Id) ->
-    io:format("[~p]: [~p] is down~n", [Id, Pkey]),
+    io:format("[~p succ]: [~p] is down~n", [Id, Pkey]),
     {Skey, _, Spid} = Successor,
 
-    Store1 = store:merge(Replica, Store),
-    io:format("[~p ] 1111111111111 expect from~n", [Id]),
+    % 不能分为两个trx，在一起才能确保consistency
+    io:format("[~p succ] waiting down.next.next replicate our replica[size=~p](will later be merged into store), we have Store[size=~p] now~n", [Id, store:size(Replica), store:size(Store)]),
+    Store1 = merge(Store, Replica, Successor), % ensure data is consistent before we respond to next event
+    io:format("[~p succ] merging local replica [~p] data into store(now [~p] data), this increment has been sent to down.succ.succ [~p]~n", [Id, store:size(Replica), store:size(Store1), Skey]),
+    % should also replicate bulk to next
     receive
-        {bulk_replicate, Qref, PPStore, {PPkey, PPpid}} ->
-            io:format("222222222~n"),
+        {replicate_all, Qref, PPStore, {PPkey, PPpid}} ->
+            io:format("[~p succ] received replica[size=~p] from down.previous node, now Store[size=~p], Replica[size=~p]~n", [Id, store:size(PPStore), store:size(Store1), store:size(Replica)]),
             Replica1 = PPStore,
             PPpid ! {Qref, {Skey, Spid}}
     end,
 
     {{PPkey, monitor(PPpid), PPpid}, Successor, Next, Store1, Replica1};
-% TODO：这里怎么确保一定nxt不为nil的？
+
+% succ is never nil, so nxt is never nil
 down(Ref, Predecessor, {Skey, Ref, _}, {Nkey, Npid}, Store, Replica, Id) ->
-    io:format("[~p]: [~p] is down~n", [Id, Skey]),
+    io:format("[~p prev]: [~p] is down~n", [Id, Skey]),
 
     Qref = make_ref(),
-    Npid ! {bulk_replicate, Qref, Store, {Id, self()}},
-    io:format("3333333333333 send to [~p]~n", [Nkey]),
+    Npid ! {replicate_all, Qref, Store, {Id, self()}},
+    io:format("[~p prev] waiting for down.succ replicate our store[size=~p]~n", [Id, store:size(Store)]),
     receive
         % mark-red do not consider more than one node down
         {Qref, Nx} ->
-            io:format("4444444444444~n"),
             ok
     end,
 
     stabilize({Nkey, dontcare, Npid}),
     {Predecessor, {Nkey, monitor(Npid), Npid}, Nx, Store, Replica}.
 
-% succ挂掉，prev交replica给next，next直接merge原有replica，replica换成prev的
-% down(Ref, Predecessor, {Skey, Ref, Spid}, {Nkey, Npid}, ) ->
-%     io:format("[~p] is down~n", [Skey]),
 
-    
-
-%     stabilize({Nkey, dontcare, Npid}),
-%     {Predecessor, {Nkey, monitor(Npid), Npid}, nil}.
-    
-
-handle_visualize(Id, Starter, Seq, Acc, RingStr, {_Skey, _, Spid}, Store) ->
+handle_visualize(Id, Starter, Seq, Acc, RingStr, {_Skey, _, Spid}, Store, Replica) ->
     Self = self(),
     case Starter of
         Self -> Seq1 = Seq + 1;
         _Else -> Seq1 = Seq
     end,
     case Seq1 of
-        2 -> io:format("Total ~p data, graph: ~p~n", [Acc, RingStr ++ integer_to_list(Id) ++ "(" ++ integer_to_list(store:size(Store)) ++ ")"]);
+        2 -> io:format("Total ~p data, graph: ~p~n", [Acc, RingStr ++ integer_to_list(Id) ++ "(Store:" ++ integer_to_list(store:size(Store)) ++ ") (Replica:" ++ 
+            integer_to_list(store:size(Replica)) ++ ")"]);
         % 2 -> io:format("Total ~p data~n", [Acc]);
         _ -> 
-            Spid ! {visualize, Starter, Seq1, Acc + store:size(Store), RingStr ++ integer_to_list(Id) ++ "(" ++ integer_to_list(store:size(Store)) ++ ")" ++ " --> "}
+            Spid ! {visualize, Starter, Seq1, Acc + store:size(Store), RingStr ++ integer_to_list(Id) ++ "(Store:" ++ integer_to_list(store:size(Store)) ++ ") (Replica:" ++ 
+            integer_to_list(store:size(Replica)) ++ ") --> "}
     end.
+
+validate_store(Id, Predecessor, Store) ->
+    case Predecessor of
+        nil -> Store1 = Store;
+        {Pkey, Ppid} -> 
+            Store1 = handover(Id, Store, Pkey, Ppid, Id)
+    end,
+    Store1.
 
 monitor(Pid) -> 
     Ref = erlang:monitor(process, Pid),

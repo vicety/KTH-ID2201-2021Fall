@@ -3,6 +3,8 @@
 -compile(export_all).
 
 -define(Timeout, 1000).
+-define(AddDelay, 0).
+-define(AddRetryAfter, 200).
 
 % TODO: 稳定后加入new node观察
 node(MODULE) ->
@@ -50,13 +52,14 @@ node5() ->
     First = start(node5),
     KeyTmp = keys(9),
     NodeKeys = [{0, First}|start(keys, node5, First, KeyTmp)],
-    Keys = keys(100),
+    Keys = keys(400),
     spawn(fun() -> Sets = sets:from_list(Keys), io:format("~p unique keys~n", [sets:size(Sets)]) end),
     Answer = get_answer(NodeKeys, Keys),
     io:format("keys ~p~n", [Answer]),    
 
     timer:sleep(3000),
     add(Keys, First),
+    timer:sleep(1000), % to print out the graph
     loop_check(Keys, First).
 
 
@@ -114,7 +117,6 @@ find_pos(Nodes, K) ->
     end, [], Seq),
     lists:nth(1, Acc).
 
-
 loop_check(Keys, First) ->
     check(Keys, First),
     timer:sleep(100),
@@ -153,16 +155,23 @@ start(Module, N, P) ->
 % 	    timeout
 %     end.
 
+delay(N) ->
+    case N of
+        0 -> ok;
+        _ -> timer:sleep(N)
+    end.
+
 add(Key, Value, P, 3) ->
     error;
 add(Key, Value, P, Retry) ->
+    delay(?AddDelay),
     Q = make_ref(),
     P ! {add, Key, Value, Q, self()},
     receive 
 	{Q, ok} ->
 	    ok;
     {Q, error} ->
-        timer:sleep(300),
+        timer:sleep(?AddRetryAfter),
         io:format("retry adding~n"),
         add(Key, Value, P, Retry+1)
 	after ?Timeout ->
