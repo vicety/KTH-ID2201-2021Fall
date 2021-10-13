@@ -4,6 +4,10 @@
 -define(Stabilize, 100).
 -define(Timeout, 5000).
 
+% mark-red 
+% 1. add node simultaneously; sleep; add data / lookup (open LOG_ADD switch)
+% 2. add data simultaneously; (eventual consistency) 
+
 % mark-red
 % 新加入的节点A何时能够被完全认识到？以下按时间排列
 % 1 A.succ：加入时的succ是随便选的，之后stabilize的时候，如果发现自己所在的位置没有比succ指出的prev更优，那么认为prev是自己的succ，一个个逆时针找，最终能够找到合法的succ，向其notify，不考虑节点来去，此操作应该O1成功，平均On
@@ -257,7 +261,7 @@ handle_visualize(Id, Starter, Seq, Acc, RingStr, {_Skey, Spid}, Store) ->
     end,
     case Seq1 of
         % 2 -> io:format("Total ~p data, graph: ~p~n", [Acc, RingStr ++ integer_to_list(Id) ++ "(" ++ integer_to_list(store:size(Store)) ++ ")"]);
-        2 -> io:format("Total ~p data~n", [Acc]);
+        2 -> io:format("[~p] Total ~p data~n", [now(), Acc]);
         _ -> 
             Spid ! {visualize, Starter, Seq1, Acc + store:size(Store), RingStr ++ integer_to_list(Id) ++ "(" ++ integer_to_list(store:size(Store)) ++ ")" ++ " --> "}
     end.
@@ -314,13 +318,13 @@ notify({Nkey, Npid}, Id, Predecessor, Store) ->
         nil ->
             % io:format("Nkey ~p, Id ~p, size: ~p~n", [Nkey, Id, store:size(Store)]),
             Store1 = handover(Id, Store, Nkey, Npid, Id),
-            timer:sleep(100),
+            % timer:sleep(100),
             {{Nkey, Npid}, Store1};
         {Pkey, _} ->
             case key:between(Nkey, Pkey, Id) of
                 true ->
                     Store1 = handover(Id, Store, Nkey, Npid, Id),
-                    timer:sleep(100),
+                    % timer:sleep(100),
                     % Store1 = handover(Pkey, Store, Nkey, Npid, Id), % 都是一样的
                     {{Nkey, Npid}, Store1};
                 false ->

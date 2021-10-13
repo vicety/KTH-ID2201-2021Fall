@@ -5,8 +5,17 @@
 -define(Stabilize, 100).
 -define(VisualizeInterval, 500).
 -define(Timeout, 5000).
+% simulate add failure
 -define(ReplicateTimeout, 80).
 -define(StoreValidation, 200).
+
+% mark-red: 
+% 1. handle failure: maintain next pointer
+% 2. replication: maintain replicated data in next node, when node down, 
+%    1. merge replicate to storage that response to lookup request
+%    2. make new replication
+%    3. replicate for predecessor since its replication is also lost with the down node
+
 
 % 0(Store:5) (Replica:5) --> 35584(Store:1) (Replica:5) --> 2121782(Store:30) (Replica:1) --> 4161369(Store:18) (Replica:30) 
 %                        --> 5458605(Store:11) (Replica:18) --> 6908360(Store:12) (Replica:11) --> 7923512(Store:10) (Replica:12) 
@@ -148,7 +157,8 @@ add(K, V, Qref, Client, Id, {Pkey, _, _}, {Skey, _, Spid}, Store) ->
         true ->
             case rand:uniform(?ReplicateTimeout) of
                 ?ReplicateTimeout ->
-                    io:format("[~p] replicate to [~p] no response~n", [Id, Skey]),
+                    io:format("add to [~p] failed, successor [~p]~n", [Id, Skey]),
+                    % io:format("[~p] replicate to [~p] no response~n", [Id, Skey]),
                     Store1 = Store,
                     Spid ! stop,
                     Crash = true,
@@ -269,14 +279,14 @@ down(Ref, {Pkey, Ref, _}, Successor, Next, Store, Replica, Id) ->
     {Skey, _, Spid} = Successor,
 
     % 不能分为两个trx，在一起才能确保consistency
-    io:format("[~p succ] waiting down.next.next replicate our replica[size=~p](will later be merged into store), we have Store[size=~p] now~n", [Id, store:size(Replica), store:size(Store)]),
+    io:format("[~p succ] waiting down.next.next replicate down.next's replica[size=~p](will later be merged into store), we have Store[size=~p] now~n", [Id, store:size(Replica), store:size(Store)]),
     Store1 = merge(Store, Replica, Successor), % ensure data is consistent before we respond to next event
     io:format("[~p succ] merging local replica [~p] data into store(now [~p] data), this increment has been sent to down.succ.succ [~p]~n", [Id, store:size(Replica), store:size(Store1), Skey]),
     % should also replicate bulk to next
     receive
         {replicate_all, Qref, PPStore, {PPkey, PPpid}} ->
-            io:format("[~p succ] received replica[size=~p] from down.previous node, now Store[size=~p], Replica[size=~p]~n", [Id, store:size(PPStore), store:size(Store1), store:size(Replica)]),
             Replica1 = PPStore,
+            io:format("[~p succ] received replica[size=~p] from down.previous node, now Store[size=~p], Replica[size=~p]~n", [Id, store:size(PPStore), store:size(Store1), store:size(Replica1)]),
             PPpid ! {Qref, {Skey, Spid}}
     end,
 

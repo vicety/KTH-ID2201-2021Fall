@@ -5,20 +5,84 @@
 -define(Timeout, 1000).
 -define(AddDelay, 0).
 -define(AddRetryAfter, 200).
+-define(LOG_ADD, true).
 
 % TODO: 稳定后加入new node观察
 node(MODULE) ->
     rand:seed(exsss, 114),
 
     First = start(MODULE),
-    start(MODULE, 9, First),
-    Keys = keys(400000),
+    start(MODULE, 63, First),
+    Keys = keys(640000),
     spawn(fun() -> Sets = sets:from_list(Keys), io:format("~p unique keys~n", [sets:size(Sets)]) end),
     
-    timer:sleep(2000),
+    % timer:sleep(3000),
     add(Keys, First),
     loop_check(Keys, First).
 
+regular() ->
+    N = 640000,
+    HT = #{},
+    T1 = now(),
+    io:format("[~p] now~n", [now()]),
+    lists:foldl(fun(E, T) ->
+        T#{rand:uniform(1000000) => x}
+    end, HT, lists:seq(1, N)),
+    T2 = now(),
+    Done = (timer:now_diff(T2, T1) div 1000),
+    io:format("~w add operation in ~w ms ~n", [N, Done]).
+
+dist_add() ->
+    rand:seed(exsss, 115),
+
+    N = 1024,
+    REPEAT = 625,
+
+    First = start(node2),
+    KeyTmp = keys(N-1),
+    NodeKeys = [{0, First}|start(keys, node2, First, KeyTmp)],
+    Pids = lists:map(fun({_K, Pid}) -> Pid end, NodeKeys),
+    io:format("pids ~p~n", [Pids]),
+
+    Wait = fun W(0) -> ok;
+        W(N1) ->
+        receive 
+            join -> W(N1-1)
+        end
+    end,
+
+    Self = self(),
+    Join = fun() ->
+        receive 
+            start ->
+                Wait(N),
+                Self ! done
+            end
+    end,
+
+    Data = keys(N*REPEAT),
+    spawn(fun() -> Sets = sets:from_list(Data), io:format("~p unique keys~n", [sets:size(Sets)]) end),
+    Seq = lists:seq(1, N),
+    PidWithData = lists:foldl(fun(SeqN, Acc) ->
+        [{lists:nth(SeqN, Pids), lists:sublist(Data, 1+(SeqN-1)*REPEAT, REPEAT)}|Acc]
+    end, [], Seq),
+
+    register(join, spawn(Join)),
+    lists:map(fun({Node, Data1}) -> spawn(
+        fun() -> add(Data1, Node), join ! join end
+    ) end, PidWithData),
+    
+    io:format("[~p] now~n", [now()]),
+    T1 = now(),
+    join ! start,
+    receive
+        done -> ok
+    end,
+    T2 = now(),
+    Done = (timer:now_diff(T2, T1) div 1000),
+    io:format("~w add operation in ~w ms ~n", [N*REPEAT, Done]),
+
+    loop_check(Data, First).
 
 node4() ->
     rand:seed(exsss, 114),
@@ -52,7 +116,7 @@ node5() ->
     First = start(node5),
     KeyTmp = keys(9),
     NodeKeys = [{0, First}|start(keys, node5, First, KeyTmp)],
-    Keys = keys(400),
+    Keys = keys(100),
     spawn(fun() -> Sets = sets:from_list(Keys), io:format("~p unique keys~n", [sets:size(Sets)]) end),
     Answer = get_answer(NodeKeys, Keys),
     io:format("keys ~p~n", [Answer]),    
@@ -161,7 +225,7 @@ delay(N) ->
         _ -> timer:sleep(N)
     end.
 
-add(Key, Value, P, 3) ->
+add(Key, Value, P, 100) ->
     error;
 add(Key, Value, P, Retry) ->
     delay(?AddDelay),
@@ -172,7 +236,10 @@ add(Key, Value, P, Retry) ->
 	    ok;
     {Q, error} ->
         timer:sleep(?AddRetryAfter),
-        io:format("retry adding~n"),
+        case ?LOG_ADD of
+            true -> io:format("retry adding~n");
+            _ -> ok
+        end,
         add(Key, Value, P, Retry+1)
 	after ?Timeout ->
 	    timeout
@@ -215,8 +282,17 @@ add(Keys, P) ->
     end, {0, 0}, Keys),
     T2 = now(),
     Done = (timer:now_diff(T2, T1) div 1000),
-    io:format("~w add operation in ~w ms ~n", [length(Keys), Done]),
-    io:format("~w add failed, ~w caused a timeout ~n", [Fail, Timeout]).
+    case ?LOG_ADD of
+        true ->
+            io:format("~w add operation in ~w ms ~n", [length(Keys), Done]),
+            io:format("~w add failed, ~w caused a timeout ~n", [Fail, Timeout]);
+        false -> 
+            case Fail of
+                0 -> ok;
+                _ -> io:format("~w add failed, ~w caused a timeout ~n", [Fail, Timeout])
+            end
+    end.
+    
 
 % do lookup on keys, count time and failure
 check(Keys, P) ->
